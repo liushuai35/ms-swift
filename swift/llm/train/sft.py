@@ -44,7 +44,7 @@ class SwiftSft(SwiftPipeline, TunerMixin):
 
     def _prepare_model_tokenizer(self, **kwargs):
         args = self.args
-        self.model, self.processor = args.get_model_processor(**kwargs)
+        self.model, self.processor = args.get_model_processor(**kwargs) # ms-swift/swift/llm/model/register.py
         if args.sequence_parallel_size > 1:
             from swift.trainers.sequence_parallel import sequence_parallel
             sequence_parallel.prepare(
@@ -53,6 +53,26 @@ class SwiftSft(SwiftPipeline, TunerMixin):
             return
         if hasattr(self.model, 'hf_device_map'):
             logger.info(f'model.hf_device_map: {self.model.hf_device_map}')
+            
+        # # ---------- 1. 取出 tokenizer ----------
+        # tokenizer = getattr(self.processor, 'tokenizer', self.processor)   # 兼容 processor/tokenizer 二合一
+
+        # # ---------- 2. 新增 special tokens ----------
+        # special_tokens = ["<|segment_flag_token|>"]   # 按需改
+        # num_added = tokenizer.add_special_tokens(
+        #     {"additional_special_tokens": special_tokens}
+        # )
+        # if num_added > 0:
+        #     # 3. 扩容模型 embedding
+        #     self.model.resize_token_embeddings(len(tokenizer))
+        #     # 4. 保存 tokenizer，防止后续缓存读到旧表
+        #     tokenizer.save_pretrained(args.output_dir)
+        
+        # # 添加完就能查
+        # new_ids = [tokenizer.convert_tokens_to_ids(t) for t in special_tokens]
+        # logger.info(f"special token id:{dict(zip(special_tokens, new_ids))}")
+        
+        # logger.info(f'{len(tokenizer), tokenizer.special_tokens_map}')
 
         logger.info(f'model_info: {self.model.model_info}')
 

@@ -5,6 +5,9 @@ from typing import List
 
 
 class LLMModelType:
+    
+    local_deepseek = 'local_deepseek'
+
     qwen = 'qwen'
     qwen2 = 'qwen2'
     qwen2_5 = 'qwen2_5'

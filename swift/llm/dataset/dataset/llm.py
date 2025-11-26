@@ -6,11 +6,110 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import json
 import numpy as np
+import glob
+import os
+
+from datasets import Dataset as HfDataset
 
 from ...template import split_str_parts_by
 from ..preprocessor import (AlpacaPreprocessor, ClsGenerationPreprocessor, ClsPreprocessor, MessagesPreprocessor,
                             ResponsePreprocessor, RowPreprocessor, TextGenerationPreprocessor)
 from ..register import DatasetMeta, SubsetDataset, register_dataset
+
+
+class SegmentedGLMPreprocessor(RowPreprocessor):
+    """
+    处理 segmented_glm 目录下的 .seg.txt 文件，每行一个 segment，支持 prompt 模板。
+    通过重载 prepare_dataset 完成目录读取和样本构建，无需修改 loader。
+    """
+    def __init__(self, prompts: Optional[str] = None, data_glob: Optional[str] = None, **kwargs):
+        super().__init__(**kwargs)
+        self.prompts = prompts or "Please split the following content:\n{content}\n"
+        self.segment_flag_token = '<|segment_flag_token|>'
+        self.data_glob = data_glob  # 例如：/path/to/segmented_glm/**/*.seg.txt
+        self.system_prompt = """You segment a document for embedding/RAG.
+Instructions:
+- Split the input into coherent semantic chunks (topic, section, step, or tightly related facts).
+- Do not rewrite, summarize, or omit text.
+- Preserve original wording, code, numbers, lists.
+- Keep each chunk reasonably sized (rough guide: 300–1200 characters) and do not cut a sentence in half.
+- Merge very tiny trailing fragments into the previous chunk.
+
+Output format:
+Return the chunks in original order.
+Place a single line containing exactly: <|segment_flag_token|>
+between consecutive chunks.
+Do not add anything else.
+
+Now wait for the user text and output only the segmented result.
+"""
+
+    def prepare_dataset(self, dataset: HfDataset) -> HfDataset:
+        # 如果提供了 data_glob，则忽略 loader 读入的行级文本，按文件粒度重建数据集
+        if not self.data_glob:
+            return dataset
+
+        files = glob.glob(self.data_glob, recursive=True)
+        assert files, f"No files matched: {self.data_glob}"
+
+        samples = []
+        for f in files:
+            try:
+                with open(f, 'r', encoding='utf-8', errors='ignore') as fin:
+                    content = fin.read().strip()
+            except Exception:
+                continue
+            if not content:
+                continue
+            clean_content = content.replace(self.segment_flag_token, '').strip()
+            prompt = self.prompts.format(content=clean_content)
+            messages = [
+                {"role": "system", "content": self.system_prompt},
+                {"role": "user", "content": prompt},
+                {"role": "assistant", "content": content, "loss": True}
+            ]
+            samples.append({'messages': messages})
+
+        if not samples:
+            # 回退：若未构造出样本，则保持原数据集
+            return dataset
+
+        return HfDataset.from_list(samples)
+
+    def preprocess(self, row: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        # 如果已经有 messages，直接返回
+        if 'messages' in row:
+            return row
+        # 兼容行级 text 数据集或上游 rename 的列
+        content = row.get('content', row.get('text', ''))
+        if not content:
+            return None
+        # 移除 flag token
+        clean_content = content.replace(self.segment_flag_token, '').strip()
+        # 格式化 prompt
+        prompt = self.prompts.format(content=clean_content)
+        # SFT 格式：messages
+        messages = [
+            {"role": "system", "content": self.system_prompt},
+            {"role": "user", "content": prompt},
+            {"role": "assistant", "content": content, "loss": True}
+        ]
+        return {'messages': messages}
+
+
+# 注册 segmented_glm 数据集
+register_dataset(
+    DatasetMeta(
+        ms_dataset_id='local/segmented_glm',
+        dataset_name='local/segmented_glm',
+        # 使用 glob 让 loader 能以 text 读取，从而触发预处理器
+        dataset_path='/home/shuai.liu01/data/segmented_glm/**/*.seg.txt',
+        preprocess_func=SegmentedGLMPreprocessor(
+            data_glob='/home/shuai.liu01/data/segmented_glm/**/*.seg.txt'
+        ),
+        tags=['segmentation', 'sft', 'local'],
+    )
+)
 
 
 class AlpacaZhPreprocessor(AlpacaPreprocessor):

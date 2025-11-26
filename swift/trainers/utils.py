@@ -91,19 +91,30 @@ def per_token_loss_func_sp(outputs, labels, enable_dft_loss=False, **kwargs) -> 
     return loss
 
 
-def per_token_loss_func(outputs, labels, enable_dft_loss: bool = False, **kwargs):
-    logits = outputs.logits
-    # Upcast to float if we need to compute the loss to avoid potential precision issues
-    logits = logits.float()
-    labels = torch.roll(labels, shifts=-1, dims=-1).view(-1)
-
-    # Flatten the tokens
+def per_token_loss_func(outputs, labels,
+                        enable_dft_loss: bool = False,
+                        token_weight_dict: dict = None,   # ← 新增
+                        **kwargs):
+    logits = outputs.logits.float()
+    labels = torch.roll(labels, shifts=-1, dims=-1).view(-1)        # 因果 LM 对齐
     logits = logits.view(-1, logits.shape[-1])
-    # Enable model parallelism
     labels = labels.to(logits.device)
+
+    # 1. 基础 per-token loss
     loss = F.cross_entropy(logits, labels, ignore_index=-100, reduction='none')
+
+    # 2. 构造权重向量（默认 1.0）
+    if token_weight_dict:
+        weight = torch.ones_like(loss, dtype=torch.float)
+        for tid, w in token_weight_dict.items():
+            mask = (labels == tid)
+            weight[mask] = w
+        loss = loss * weight          # 加权
+
+    # 3. 可选 DFT 降权
     if enable_dft_loss:
         with torch.no_grad():
             target_probs = torch.exp(-loss)
         loss *= target_probs
+
     return loss

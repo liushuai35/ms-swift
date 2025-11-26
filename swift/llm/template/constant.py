@@ -4,6 +4,9 @@ from typing import List
 
 
 class LLMTemplateType:
+    
+    local_deepseek = 'local_deepseek'
+    
     chatml = 'chatml'
     default = 'default'
     dummy = 'dummy'
