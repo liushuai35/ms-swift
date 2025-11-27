@@ -6,8 +6,8 @@ import json
 
 from swift.llm import Messages
 from swift.llm.template.utils import ContextType
-from .utils import calculate_loss_scale
-
+from .utils import calculate_loss_scale # calculate_loss_scale结合config中json文件定义的key和value，对某些词进行定制loss_scale
+# 目前主要用于RLHF，在Pretrain和SFT中主要通过loss中的token_weight_dict设置
 
 class LossScale:
     # Indicates whether loss_scale contains only 0 and 1.

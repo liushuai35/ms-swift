@@ -104,7 +104,8 @@ class SwiftSft(SwiftPipeline, TunerMixin):
 
         return train_dataset, val_dataset
 
-    def _get_data_collator(self):
+    # loss_scale是給grpo使用的，在目前實現中pt/sft都沒有用到，但是cross-entry有相關的參數設置不同token的權重。
+    def _get_data_collator(self): # 定义数据整理器（将原始数据转换成模型输入格式，包括'input_ids','inputs_embeds','attention_mask','labels','loss_scale','position_ids','token_type_ids','attention_mask_2d'）
         args = self.args
         template = self.template
         padding_to = args.max_length if args.train_type == 'longlora' else None
@@ -164,7 +165,7 @@ class SwiftSft(SwiftPipeline, TunerMixin):
                 # val_dataset
                 continue
             if (args.model_meta.is_multimodal or args.lazy_tokenize) and not args.streaming:
-                dataset = LazyLLMDataset(dataset, template.encode, strict=args.strict, random_state=args.data_seed)
+                dataset = LazyLLMDataset(dataset, template.encode, strict=args.strict, random_state=args.data_seed) # 通过模版将原始数据懒加载编码成模型输入格式
             if args.packing:
                 packing_dataset_cls = IterablePackingDataset if args.streaming else PackingDataset
                 dataset = packing_dataset_cls(
@@ -186,16 +187,16 @@ class SwiftSft(SwiftPipeline, TunerMixin):
 
     def run(self):
         args = self.args
-        train_dataset, val_dataset = self._prepare_dataset()
+        train_dataset, val_dataset = self._prepare_dataset() # 准备数据集，包括加载、编码、打包等
 
         if args.task_type == 'seq_cls':
             args.problem_type = args.problem_type or getattr(self.model.config, 'problem_type', None)
             logger.info(f'args.problem_type: {args.problem_type}')
         args.save_args()
 
-        data_collator = self._get_data_collator()
+        data_collator = self._get_data_collator() # 定义数据整理器（将编码后的数据转换成模型输入格式，包括'input_ids','inputs_embeds','attention_mask','labels','loss_scale','position_ids','token_type_ids','attention_mask_2d'）
         # Some tuners require train_dataset and data_collator for preparation: LoRA-GA
-        self.model = self.prepare_model(self.args, self.model, template=self.template, train_dataset=train_dataset)
+        self.model = self.prepare_model(self.args, self.model, template=self.template, train_dataset=train_dataset) # 
         logger.info(f'model: {self.model}')
         model_parameter_info = get_model_parameter_info(self.model)
         self.train_msg['model_parameter_info'] = model_parameter_info
