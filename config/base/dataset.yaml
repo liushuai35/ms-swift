@@ -1,54 +1,127 @@
-# 基础：数据参数（与 Swift CLI 中 dataset 相关选项对齐）
+# ==============================================================================
+# 数据集核心配置（与Swift CLI dataset相关选项对齐，控制数据读取、预处理、缓存全流程）
+# 适用场景：SFT/RLHF/推理评估等所有需要加载数据的任务
+# ==============================================================================
 
-# 训练/验证数据源列表。
-# - 支持 Hugging Face Hub ID、远程/本地路径。
-# - 支持可选的子集与采样条目数标注：格式为 "<id_or_path>:<subset>#<num>"。
-#   例如：
-#     - "my_org/my_ds:default#10000"  表示使用子集 default 的 1 万条样本。
-#     - "/data/sft.jsonl#5000"       表示从本地 JSONL 随机采 5000 条（若开启 shuffle）。
-dataset: []
+# 训练数据源列表：指定训练数据的来源，支持多数据源组合
+dataset: []  # 支持格式：
+             # 1. Hugging Face Hub ID（如"swift/self-cognition"）
+             # 2. 远程/本地文件路径（如"/data/sft.jsonl"、"https://xxx/sft.csv"）
+             # 3. 带子集与采样数的标注格式："<id_or_path>:<subset>#<num>"
+             #    示例1："my_org/my_ds:default#10000" → 使用子集default的1万条样本
+             #    示例2："/data/sft.jsonl#5000" → 从本地JSONL随机采样5000条（需开启dataset_shuffle）
+             # 默认值：[]（实验级配置需强制覆盖，指定至少一个数据源）
 
-# 验证集数据源。若为空且 split_dataset_ratio > 0，将从训练集合并后按比例切分。
-val_dataset: []
+# 验证集数据源列表：指定验证数据的来源，逻辑与dataset一致
+val_dataset: []  # 默认值：[]（为空时，若split_dataset_ratio>0，自动从训练集合并后按比例切分）
 
-# 预缓存（已分词/打包）数据源。用于直接加载 tokenize 后的缓存，跳过在线处理以提速。
-cached_dataset: []
+# 预缓存数据源列表：直接加载已分词/打包的缓存数据（跳过在线预处理，大幅提速）
+cached_dataset: []  # 来源：通过"swift export --to_cached_dataset true"生成的缓存文件路径
+                    # 适用场景：二次训练/相同数据重复使用，避免重复tokenize
+                    # 默认值：[]
 
-# 仅当 val_dataset 为空时生效：从 dataset 合并后的数据中切分该比例为验证集。
-split_dataset_ratio: 0.1
+# 验证集切分比例：仅当val_dataset为空时生效
+split_dataset_ratio: 0.1  # 从合并后的训练集中切分该比例作为验证集（默认10%）
+                          # 示例：dataset总样本10000条，split_dataset_ratio=0.1 → 验证集1000条，训练集9000条
 
-# 预处理/缓存/随机化相关参数
-data_seed: 42                 # 数据层随机种子（打乱/切分等）。
-dataset_num_proc: 1           # map/tokenize 过程的并行进程数。
-lazy_tokenize: false          # 惰性分词：按需即时分词（减少预处理时间/内存）
-load_from_cache_file: false   # 若为 true，尽量复用 datasets 的 cache（需哈希一致）。
-dataset_shuffle: true         # 是否打乱训练集。
-val_dataset_shuffle: false    # 是否打乱验证集（通常 false 保持评估稳定）。
-streaming: false              # datasets 流式加载（超大数据/远端时有帮助）。
-interleave_prob: null         # 多数据源混合采样的比例（null=均匀/默认策略）。
-stopping_strategy: first_exhausted  # 多源并行时的停止策略：first_exhausted|all_exhausted。
-shuffle_buffer_size: 1000     # 流式/大数据打乱时的缓冲区大小。
-download_mode: reuse_dataset_if_exists # 下载策略：reuse_dataset_if_exists|force_redownload。
+# ==============================================================================
+# 预处理与缓存控制参数（平衡速度、内存占用与灵活性）
+# ==============================================================================
 
-# 列映射与严格模式
-# - 对于 SFT：常见列为 messages / prompt / response / system。
-# - 对于 RM/GRPO：可能需要 prompt, responses, scores 等列。
-# - 可使用 JSON 映射字符串或对象写法：{"text1":"query","text2":"response"}
-columns: null
+data_seed: 42  # 数据层随机种子（控制数据集打乱、切分的随机性，保证结果可复现）
+               # 默认值：42（与训练seed独立，互不影响）
 
-# 严格模式：若为 true，缺失列/类型不匹配将直接报错；false 则尽量跳过或给出警告。
-strict: false
+dataset_num_proc: 1  # map/tokenize等预处理过程的并行进程数
+                     # 建议：根据CPU核心数调整（如8核设为8），Windows系统建议设为0（禁用多进程）
+                     # 默认值：1
 
-# 训练前是否移除未使用列（提高内存/IO效率）。
-# - SFT 通常为 true；
-# - GRPO/RL 场景常需保留更多原始列用于奖励函数，因此建议 false（在任务文件里已覆盖）。
-remove_unused_columns: true
+lazy_tokenize: false  # 惰性分词开关：是否按需即时分词（而非一次性预处理所有数据）
+                      # 优势：减少预处理时间和内存占用，适合超大数据集
+                      # 劣势：训练时可能出现IO波动，非必要不启用
+                      # 默认值：false
 
-# 自我认知/模型元数据自动填充（仅当相关模板/数据处理启用时生效）。
-auto_fields:
-  model_name: null            # 例如："Qwen2.5-7B-Instruct"，用于生成模型自我介绍等。
-  model_author: null          # 例如："Qwen Team"。
+load_from_cache_file: true  # 是否复用datasets库的缓存文件（需数据/预处理参数哈希一致）
+                            # 建议：训练时设为true（加速二次运行），数据集/预处理参数变更时设为false
+                            # 默认值：true
 
-# 自定义数据注册：
-# - 追加 datasets 风格的 dataset_info.json 路径，用于本地私有数据集的字段/拆分定义。
-dataset_info_files: []
+dataset_shuffle: true  # 训练集是否打乱（保证训练随机性，避免模型记忆样本顺序）
+                       # 默认值：true（流式数据集需配合shuffle_buffer_size生效）
+
+val_dataset_shuffle: false  # 验证集是否打乱（评估时需保持样本顺序稳定，确保指标可复现）
+                            # 默认值：false
+
+streaming: false  # 流式加载开关：是否通过datasets的streaming模式加载数据（不加载全量到内存）
+                  # 适用场景：超大数据集（如100G+）、远端慢存储数据
+                  # 注意事项：
+                  # 1. 启用后需手动设置--max_steps（流式数据集无法获取总长度）
+                  # 2. 等效num_train_epochs的方案：设置--save_strategy epoch + 较大max_steps，或设置max_epochs
+                  # 3. 预处理仅在rank0进行，通过数据分发同步到其他进程，world_size较大时可能成为训练瓶颈
+                  # 4. 优势：跳过预处理等待，预处理与训练时间重叠
+                  # 默认值：false
+
+interleave_prob: null  # 多数据源混合采样比例（仅多数据源+流式加载时生效）
+                       # 取值：null=均匀混合（默认策略），或[0.3, 0.7]（对应dataset列表中各数据源的采样概率）
+                       # 作用：作为参数传入interleave_datasets函数，控制多数据源的混合比例
+                       # 默认值：null
+
+stopping_strategy: "first_exhausted"  # 多数据源并行加载时的停止策略
+                                      # 可选值：
+                                      # - "first_exhausted"：首个数据源耗尽即停止训练
+                                      # - "all_exhausted"：所有数据源耗尽才停止训练
+                                      # 默认值："first_exhausted"
+
+shuffle_buffer_size: 1000  # 流式/大数据集的打乱缓冲区大小（仅dataset_shuffle=true时生效）
+                           # 说明：缓冲区越大，打乱越均匀，但内存占用越高
+                           # 默认值：1000
+
+download_mode: "reuse_dataset_if_exists"  # 数据集下载策略
+                                          # 可选值：
+                                          # - "reuse_dataset_if_exists"：已存在则复用（默认，节省带宽）
+                                          # - "force_redownload"：强制重新下载（适用于Hub数据集报错、数据更新场景）
+                                          # 默认值："reuse_dataset_if_exists"
+
+# ==============================================================================
+# 数据格式与列映射配置（适配不同数据集的格式差异）
+# ==============================================================================
+
+columns: null  # 列映射规则：将数据集原始列名映射为模型/任务期望的列名
+               # 支持格式：
+               # 1. JSON对象写法：{"text1":"query", "text2":"response"}（SFT场景常用）
+               # 2. JSON字符串写法：'{"prompt":"input", "responses":"outputs"}'（CLI命令行传入时使用）
+               # 常见场景：
+               # - SFT：需映射 messages/prompt/response/system 等列
+               # - RM/GRPO：需映射 prompt/responses/scores 等列
+               # 默认值：null（不映射，使用数据集原始列名）
+
+strict: false  # 严格模式开关：控制数据格式不匹配时的处理逻辑
+               # 取值：
+               # - true：缺失列、类型不匹配时直接报错（适合严格校验数据质量）
+               # - false：缺失列/类型不匹配时尽量跳过样本或打印警告（适合数据格式不统一场景）
+               # 默认值：false
+
+remove_unused_columns: true  # 训练前是否删除未使用的列（优化内存占用和IO效率）
+                             # 建议：
+                             # - SFT场景设为true（仅保留tokenize相关列）
+                             # - GRPO/RL场景设为false（需保留原始列用于奖励函数计算）
+                             # 默认值：true
+
+# ==============================================================================
+# 模型元数据自动填充（仅相关模板/数据处理启用时生效，适配自我认知类任务）
+# ==============================================================================
+
+model_name: null  # 模型名称（用于生成模型自我介绍、自我认知相关回复）
+                  # 示例："Qwen2.5-7B-Instruct"
+                  # 默认值：null
+
+model_author: null  # 模型作者（用于自我认知数据集的元数据填充）
+                    # 示例："Qwen Team"、"Alibaba Cloud"
+                    # 默认值：null
+
+# ==============================================================================
+# 自定义数据集注册（加载非标准数据集时使用）
+# ==============================================================================
+
+custom_dataset_info: []  # 自定义数据集注册的JSON文件路径列表
+                        # 参考文档：自定义数据集文档 + 内置'dataset_info.json'文件格式
+                        # 用途：注册私有/非标准数据集，让Swift识别并正确加载
+                        # 默认值：[]

@@ -1,0 +1,24 @@
+# ==============================================================================
+# Rollout 核心配置（继承部署参数，适配多轮GRPO训练的采样生成场景）
+# 引入 base 通用键：模型/生成/引擎等
+imports:
+    - ./core.yaml
+# 适用场景：swift rollout 命令，主要用于GRPO训练中的批量采样生成
+# ==============================================================================
+
+multi_turn_scheduler: null  # 多轮GRPO训练规划器（插件化扩展）
+                            # 说明：需传入自定义插件名称，并在plugin/multi_turn.py中实现对应逻辑
+                            # 参考文档：https://swift.readthedocs.io/zh-cn/latest/Examples/GRPO.html
+                            # 默认值：null
+
+max_turns: null  # 多轮GRPO训练的最大对话轮数
+                 # 取值：null=不做约束，正数=固定最大轮数
+                 # 默认值：null
+
+vllm_enable_lora: false  # vLLM引擎加载LoRA适配器开关（加速LoRA训练权重同步）
+                         # 参考文档：https://swift.readthedocs.io/zh-cn/latest/Examples/GRPO.html
+                         # 默认值：false
+
+vllm_max_lora_rank: 16  # vLLM引擎支持的最大LoRA rank
+                        # 约束：需大于等于训练时的lora_rank，建议设置为相等值
+                        # 默认值：16

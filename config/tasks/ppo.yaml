@@ -1,0 +1,52 @@
+# ==============================================================================
+# PPO（Proximal Policy Optimization）专属参数（仅rlhf_type="ppo"时生效）
+# 控制PPO算法的策略更新、奖励处理、采样生成等核心逻辑
+# 层级引入：fusion 核心聚合 + rlhf/rollout/infer 组合
+# ==============================================================================
+
+imports:
+    - ../fusion/core.yaml
+    - ../fusion/rlhf.yaml
+    - ../fusion/rollout.yaml
+    - ../fusion/infer.yaml
+
+num_ppo_epochs: 4  # PPO训练的epoch数（策略网络更新轮次）
+                   # 默认值：4
+
+whiten_rewards: false  # 奖励白化处理（标准化奖励分布，提升训练稳定性）
+                       # 默认值：false
+
+kl_coef: 0.05  # KL散度惩罚系数（控制策略更新与原始策略的偏差，防止训练崩溃）
+               # 取值越大，策略更新越保守
+               # 默认值：0.05
+
+cliprange: 0.2  # 策略梯度裁剪阈值（PPO核心参数，限制优势函数的裁剪范围）
+                # 默认值：0.2
+
+vf_coef: 0.1  # 价值网络损失权重（平衡策略损失与价值损失的比例）
+              # 默认值：0.1
+
+cliprange_value: 0.2  # 价值网络输出裁剪阈值（防止价值网络更新幅度过大）
+                      # 默认值：0.2
+
+gamma: 1.0  # 折扣因子（用于计算累积奖励，控制未来奖励的权重）
+            # 取值范围0~1，1表示不折扣未来奖励
+            # 默认值：1.0
+
+lam: 0.95  # GAE（Generalized Advantage Estimation）系数（平衡偏差与方差）
+           # 推荐值0.9~0.99，默认值：0.95
+
+num_mini_batches: 1  # 每个PPO epoch的微型批次数量（拆分数据进行梯度更新）
+                     # 用途：模拟更大的batch_size，提升训练稳定性
+                     # 默认值：1
+
+local_rollout_forward_batch_size: 64  # 本地rollout阶段的前向传播批量大小
+                                      # 控制采样生成时的并发量，适配显存大小
+                                      # 默认值：64
+
+num_sample_generations: 10  # 每个样本的生成次数（用于PPO采样阶段，增加数据多样性）
+                            # 默认值：10
+
+missing_eos_penalty: null  # 缺失EOS token的惩罚值（鼓励模型生成完整序列）
+                           # 示例：-1.0（缺失EOS时扣除1.0奖励）
+                           # 默认值：null（不施加惩罚）

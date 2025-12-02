@@ -1,0 +1,160 @@
+# ==============================================================================
+# RLHF（人类反馈强化学习）核心配置（继承训练参数，适配DPO/ORPO/GRPO等多种对齐算法）
+# 引入 base 通用键：模型/数据/训练/生成/引擎等
+imports:
+    - ./core.yaml
+# 说明：根据rlhf_type自动适配对应算法参数，未启用的算法参数可忽略
+# ==============================================================================
+
+# ==============================================================================
+# RLHF 基础配置（算法类型、参考模型/适配器配置）
+# ==============================================================================
+
+rlhf_type: "dpo"  # 人类对齐算法类型
+                  # 可选值："dpo"|"orpo"|"simpo"|"kto"|"cpo"|"rm"|"ppo"|"grpo"|"gkd"
+                  # 默认值："dpo"
+
+ref_model: null  # 参考模型（全参数训练DPO/KTO/PPO/GRPO时必填）
+                 # 默认值：null（自动设为--model指定的模型）
+
+ref_adapters: []  # 参考模型适配器（LoRA权重路径，需ms-swift>=3.8）
+                  # 适用场景：使用SFT的LoRA权重进行DPO/KTO/GRPO训练
+                  # 示例：--adapters sft_ckpt --ref_adapters sft_ckpt（正常训练）
+                  #      --resume_from_checkpoint rlhf_ckpt --ref_adapters sft_ckpt（断点续训）
+                  # 默认值：[]
+
+ref_model_type: null  # 参考模型类型（同model_type）
+                      # 默认值：null（自动根据ref_model推断）
+
+ref_model_revision: null  # 参考模型版本（同model_revision）
+                          # 默认值：null（使用参考模型默认版本）
+
+# ==============================================================================
+# 通用损失控制参数（适配多种RLHF算法）
+# ==============================================================================
+
+beta: null  # 与参考模型的偏差控制参数（值越高，偏差越小）
+            # 自动逻辑：不同算法默认值不同
+            # - simpo：2.0，GRPO：0.04，GKD：0.5，其他算法：0.1
+            # 参考文档：https://swift.readthedocs.io/zh-cn/latest/Examples/RLHF.html
+            # 默认值：null
+
+label_smoothing: 0.0  # DPO平滑参数（控制标签平滑程度，减少过拟合）
+                      # 默认值：0.0
+
+max_completion_length: 512  # GRPO/PPO/GKD算法的最大生成长度
+                            # 默认值：512
+
+rpo_alpha: null  # RPO算法中SFT损失权重（loss = dpo_loss + rpo_alpha * sft_loss）
+                 # 论文推荐值：1.0（引入SFT损失提升稳定性）
+                 # 版本说明：ms-swift<3.8默认1.0，ms-swift>=3.8默认null（不引入）
+                 # 默认值：null
+
+ld_alpha: null  # LD-DPO算法参数（对超出公共前缀的logps加权，抑制长度偏好）
+                # 默认值：null
+
+discopop_tau: 0.05  # DiscoPOP算法温度参数（缩放log-ratio，仅loss_type=discopop时生效）
+                    # 默认值：0.05
+
+loss_type: null  # 损失函数类型（自动适配rlhf_type）
+                 # 细分说明：
+                 # - DPO：支持多值混合训练（MPO），需配合loss_weights，默认"sigmoid"（可选值参考DPO文档）
+                 # - GRPO：参考GRPO专属参数
+                 # - 其他算法：使用对应默认loss_type
+                 # 默认值：null
+
+loss_weights: null  # 多loss_type混合训练时的权重分配（仅DPO MPO场景生效）
+                    # 示例：[0.7, 0.3]（对应两个loss_type的权重）
+                    # 默认值：null
+
+# ==============================================================================
+# 特定算法专属参数（DPO/ORPO/SimPO/KTO/CPO）
+# ==============================================================================
+
+cpo_alpha: 1.0  # CPO/SimPO算法中NLL损失系数
+                # 默认值：1.0
+
+simpo_gamma: 1.0  # SimPO算法奖励边际（论文建议0.5~1.5）
+                  # 默认值：1.0
+
+desirable_weight: 1.0  # KTO算法中desirable样本损失权重（抵消样本数量不均衡）
+                       # 默认值：1.0
+
+undesirable_weight: 1.0  # KTO算法中undesirable样本损失权重（抵消样本数量不均衡）
+                         # 默认值：1.0
+
+# ==============================================================================
+# RM（奖励模型）训练专属参数
+# ==============================================================================
+
+center_rewards_coefficient: null  # RM训练奖励中心化系数（激励输出均值为0，推荐0.01）
+                                  # 参考论文：https://arxiv.org/abs/2209.14655
+                                  # 默认值：null
+
+# ==============================================================================
+# 生成相关参数（PPO/GRPO/GKD算法专用）
+# ==============================================================================
+
+loss_scale: "last_round"  # RLHF训练损失权重策略（覆盖template中的loss_scale）
+                          # 默认值："last_round"（仅计算最后一轮response损失）
+
+temperature: 0.9  # 生成温度（控制生成多样性，PPO/GRPO/GKD中使用）
+                  # 默认值：0.9
+
+# ==============================================================================
+# GKD（知识蒸馏对齐）专属参数
+# ==============================================================================
+
+lmbda: 0.5  # 学生数据比例控制（策略内学生生成输出占比，0=不使用学生数据）
+            # 默认值：0.5
+
+sft_alpha: 0.0  # GKD中SFT损失权重（总loss = gkd_loss + sft_alpha * sft_loss）
+                # 默认值：0.0
+
+seq_kd: false  # 序列级知识蒸馏开关（监督式微调教师模型生成输出）
+               # 两种使用方式：
+               # 1. 提前用教师模型推理数据集（vLLM/SGLang加速），设为false
+               # 2. 训练时实时生成（保证多epoch数据多样性，效率较低），设为true
+               # 默认值：false
+
+offload_teacher_model: false  # 教师模型卸载（仅采样/计算logps时加载，节约显存）
+                              # 默认值：false
+
+log_completions: false  # 记录训练中模型生成内容（需配合--report_to wandb/swanlab）
+                        # 补充：未设置report_to时，生成completions.jsonl存储在checkpoint
+                        # 限制：仅记录vLLM采样结果
+                        # 默认值：false
+
+# ==============================================================================
+# 奖励模型/教师模型配置（PPO/GRPO/GKD算法专用）
+# ==============================================================================
+
+# 奖励模型配置
+reward_model: null  # 奖励模型ID/本地路径
+                    # 默认值：null
+
+reward_adapters: []  # 奖励模型适配器（LoRA权重路径）
+                     # 默认值：[]
+
+reward_model_type: null  # 奖励模型类型（同model_type）
+                         # 默认值：null
+
+reward_model_revision: null  # 奖励模型版本（同model_revision）
+                             # 默认值：null
+
+# 教师模型配置（rlhf_type="gkd"时必填）
+teacher_model: null  # 教师模型ID/本地路径
+                     # 默认值：null
+
+teacher_adapters: []  # 教师模型适配器（LoRA权重路径）
+                      # 默认值：[]
+
+teacher_model_type: null  # 教师模型类型（同model_type）
+                          # 默认值：null
+
+teacher_model_revision: null  # 教师模型版本（同model_revision）
+                              # 默认值：null
+
+teacher_deepspeed: null  # 教师模型DeepSpeed配置（默认使用训练模型的配置）
+                         # 可选值：同训练参数中的deepspeed（内置配置名/自定义路径）
+                         # 默认值：null

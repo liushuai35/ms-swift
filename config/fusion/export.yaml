@@ -1,0 +1,109 @@
+# ==============================================================================
+# 模型导出核心配置（含格式转换、量化、缓存数据集、Hub推送等功能，适配多场景部署与训练）
+# 引入 base 通用键：模型/量化/数据等
+imports:
+    - ./core.yaml
+# 说明：导出参数继承基本参数与合并参数，额外支持多种格式转换与优化策略
+# ==============================================================================
+
+# ==============================================================================
+# 基础导出配置（存储路径、覆盖策略）
+# ==============================================================================
+
+output_dir: null  # 导出结果存储路径
+                  # 自动逻辑：null时自动生成带合适后缀的路径（如含量化方式、格式标识）
+                  # 默认值：null
+
+exist_ok: false  # 路径存在时覆盖开关（避免误删已有数据）
+                 # 取值：true=覆盖已有路径，false=路径存在时抛出异常
+                 # 默认值：false
+
+# ==============================================================================
+# 量化配置（模型压缩，提升推理效率与显存利用率）
+# ==============================================================================
+
+quant_method: null  # 量化方法（可选多种高效量化策略）
+                    # 可选值："gptq"|"awq"|"bnb"|"fp8"
+                    # 示例参考：https://swift.readthedocs.io/zh-cn/latest/Examples/Quantization.html
+                    # 默认值：null（不量化）
+
+quant_n_samples: 256  # 量化校验集采样数（GPTQ/AWQ量化专用，保证量化精度）
+                      # 默认值：256
+
+quant_batch_size: 1  # 量化批处理大小（根据显存调整，避免OOM）
+                     # 默认值：1
+
+group_size: 128  # 量化分组大小（GPTQ/AWQ量化专用，平衡精度与压缩比）
+                 # 默认值：128
+
+# ==============================================================================
+# 缓存数据集配置（提前tokenize，加速后续训练）
+# ==============================================================================
+
+to_cached_dataset: false  # 导出为缓存数据集（提前完成tokenize，避免重复处理）
+                          # 示例参考：https://swift.readthedocs.io/zh-cn/latest/Advanced/CachedDataset.html
+                          # 提示：需区分训练集/验证集，可通过--split_dataset_ratio或--val_dataset指定
+                          # 限制：当前不支持gkd/ppo/grpo算法
+                          # 默认值：false
+
+template_mode: "train"  # 缓存数据集模板模式（仅to_cached_dataset=true时生效）
+                        # 可选值：
+                        # - "train"：适配swift pt/sft训练
+                        # - "rlhf"：适配除KTO外的其他RLHF算法
+                        # - "kto"：适配swift rlhf --rlhf_type kto
+                        # 默认值："train"
+
+# ==============================================================================
+# 格式转换配置（适配不同部署框架与训练框架）
+# ==============================================================================
+
+to_ollama: false  # 导出为Ollama格式（生成Modelfile，适配Ollama部署）
+                  # 默认值：false
+
+to_mcore: false  # HF格式转Megatron格式（适配Megatron-LM训练框架）
+                 # 默认值：false
+
+to_hf: false  # Megatron格式转HF格式（适配Hugging Face生态工具）
+              # 默认值：false
+
+mcore_model: null  # Megatron格式模型路径（to_hf=true时必填）
+                   # 默认值：null
+
+mcore_adapters: []  # Megatron格式模型的适配器路径列表
+                    # 默认值：[]
+
+thread_count: null  # Megatron格式切片数（to_mcore=true时生效）
+                    # 自动逻辑：null时根据模型大小自动分配，确保最大分片<10GB
+                    # 默认值：null
+
+offload_bridge: false  # Megatron导出vLLM适配权重时CPU卸载开关
+                       # 用途：降低GPU显存占用（CPU主存存放桥接权重）
+                       # 默认值：false
+
+# ==============================================================================
+# 格式转换精度测试配置（验证转换后模型一致性）
+# ==============================================================================
+
+test_convert_precision: false  # 权重转换精度测试开关（验证HF与Megatron格式一致性）
+                               # 默认值：false
+
+test_convert_dtype: "float32"  # 精度测试数据类型（控制测试精度粒度）
+                               # 默认值："float32"
+
+# ==============================================================================
+# Hugging Face Hub推送配置（模型共享与版本管理）
+# ==============================================================================
+
+push_to_hub: false  # 推送模型到Hugging Face Hub开关
+                    # 示例参考：https://swift.readthedocs.io/zh-cn/latest/Examples/PushToHub.html
+                    # 默认值：false
+
+hub_model_id: null  # Hub模型ID（推送目标路径，如"username/model-name"）
+                    # 默认值：null
+
+hub_private_repo: false  # Hub仓库私有开关（控制模型访问权限）
+                         # 取值：true=私有仓库，false=公开仓库
+                         # 默认值：false
+
+commit_message: "update files"  # Hub提交信息（记录版本更新内容）
+                                # 默认值："update files"

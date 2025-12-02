@@ -1,39 +1,15 @@
 # 基础：量化参数（加载/训练与推理的量化策略）
 
 # 量化方法选择：
-# - none：不量化。
-# - bitsandbytes：bnb int8/int4 权重量化（常用于省显存 finetune/infer）。
-# - gptq/awq/hqq/teq：离线权重量化方案（需配套加载器/格式）。
-quant_method: none          # 可选：none | bitsandbytes | gptq | awq | hqq | teq
+# 加载模型时采用的量化方法，可选项为'bnb'、'hqq'、'eetq'、'quanto'和'fp8'，默认为None。
+quant_method: null          
+quant_bits: null # 量化bits数，默认为None。
 
 # bitsandbytes 相关（加载/训练时）
-bnb_4bit: false             # 启用 4bit 量化（nf4/int4）。
+hqq_axis: null # hqq量化axis，默认为None。
 bnb_4bit_compute_dtype: bfloat16  # 计算 dtype（建议 Ampere+ 用 bf16）。
 bnb_4bit_quant_type: nf4    # nf4|int4 等。
 bnb_4bit_use_double_quant: true   # 双重量化（提高精度，略增计算）。
-bnb_8bit: false             # 启用 8bit 量化（更稳、节省少）。
-bnb_quant_type: null        # 细粒度选项：per_channel | per_token（视实现支持）。
-load_in_4bit: false         # Transformers 加载时直接 4bit（等价常用开关）
-load_in_8bit: false         # Transformers 加载时直接 8bit
-llm_int8_enable_fp32_cpu_offload: false # INT8 时将部分计算转移到 CPU FP32（节省显存）
+bnb_4bit_quant_storage: null # bnb量化存储类型，默认为None。
 
-# 离线权重量化（GPTQ/AWQ/HQQ/TEQ）通用配置：
-# - q_bits：量化位宽。
-# - q_group_size：分组大小（权衡精度/速度/显存）。
-# - q_desc_act：是否对激活做描述性量化（部分方法支持）。
-# - q_dtype：目标类型（如 int4）。
-# - q_apply_lora：是否对 LoRA 权重也进行量化处理（谨慎开启）。
-q_bits: 4
-q_group_size: 128
-q_desc_act: false
-q_dtype: int4
-q_apply_lora: true
 
-# KV Cache 量化（推理侧）：
-# - kv_quant：是否启用 KV 量化（依赖具体引擎支持，如 vLLM 部分场景兼容）。
-# - kv_bits/kv_group_size：与权重量化类似的位宽/分组参数。
-# - kv_desc_act：部分方法对 KV 的描述性量化控制。
-kv_quant: false
-kv_bits: 4
-kv_group_size: 256
-kv_desc_act: false

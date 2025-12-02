@@ -1,36 +1,84 @@
-# 基础：模型参数（节选自 Swift 文档）
-model: null                 # 模型id或本地路径
-model_type: null            # 模型类型（自动推断或显式指定）
-model_revision: null        # 模型版本
-task_type: causal_lm        # causal_lm | seq_cls | embedding | reranker | generative_reranker
+# ==============================================================================
+# 模型核心配置（含架构、精度、设备分配等关键参数，适配多任务场景）
+# ==============================================================================
 
-# 精度/推理内核
-torch_dtype: null           # float16 | bfloat16 | float32 | null(跟随config.json)
-attn_impl: null             # sdpa | eager | flash_attention_2 | flash_attention_3 | null
-trust_remote_code: true     # 是否允许加载远程自定义代码（社区模型常用）
+# 模型标识：指定模型的HF/ModelScope ID或本地文件夹绝对路径
+model: None  # 默认值：None（必填参数，实验级配置需强制覆盖）
 
-# tokenizer/特殊token
-new_special_tokens: []      # ["<|extra_0|>", ...] 或 .txt 文件
-num_labels: null            # seq_cls 任务必填
-problem_type: null          # regression | single_label_classification | multi_label_classification
-tokenizer_name: null        # 指定分词器（不跟随模型时）
-use_fast_tokenizer: true    # 使用 fast tokenizer（通常更快）
-pad_token_id: null          # 若模型未在 config 中定义，可手动指定
-eos_token_id: null
-bos_token_id: null
+# 模型类型：ms-swift自定义的模型类型标识（统一架构、加载逻辑、对话模板）
+model_type: None  # 默认值：None（自动识别规则：优先根据--model后缀，其次读取config.json的architectures字段）
+                  # 说明：
+                  # 1. 与config.json中的model_type概念不同，仅用于ms-swift内部适配
+                  # 2. 支持的模型类型可参考ms-swift官方支持列表
+                  # 3. 自定义模型需手动注册model_type和template，参考文档：https://swift.readthedocs.io/zh-cn/latest/Advanced/CustomModel.html
 
-# 位置编码/上下文长度
-rope_scaling: null          # 可为字符串或json字符串（覆盖config.json）
-max_model_len: null         # 若设置，将覆盖config.json的max_position_embeddings
-rope_type: null             # 常见：dynamic | linear | default（视模型实现）
-rope_base: null             # Rope 基数（部分模型支持）
-rope_factor: null           # Rope 缩放因子（部分模型支持）
+# 模型版本：指定模型的分支、tag或commit id
+model_revision: None  # 默认值：None（使用模型默认版本，如main分支）
 
-# 设备划分
-device_map: null            # auto | cpu | json字符串 | json文件
-max_memory: null            # '{0:"20GB", 1:"20GB"}'
+# 任务类型：指定模型执行的核心任务
+task_type: "causal_lm"  # 可选值：
+                        # - "causal_lm"：因果语言模型（生成任务，默认）
+                        # - "seq_cls"：序列分类（示例：https://swift.readthedocs.io/zh-cn/latest/Examples/SeqCls.html）
+                        # - "embedding"：向量生成（示例：https://swift.readthedocs.io/zh-cn/latest/Examples/Embedding.html）
+                        # - "reranker"：重排器
+                        # - "generative_reranker"：生成式重排器
+                        # 注意：设置为"seq_cls"时，需额外配置--num_labels和--problem_type
 
-# 其他
-local_repo_path: null       # 依赖外部repo的模型可指定本地路径
-init_strategy: null         # zero|uniform|normal|xavier_uniform|...|orthogonal
-model_kwargs: {}            # 特定模型的额外参数（dict），训练/推理需一致
+# 模型数据类型：控制模型权重的存储与计算精度
+torch_dtype: None  # 可选值："float16"（显存高效）、"bfloat16"（精度与速度平衡）、"float32"（全精度）
+                   # 默认值：None（自动从模型config.json中读取）
+
+# Attention实现方式：指定注意力机制的计算后端
+attn_impl: None  # 可选值："sdpa"（PyTorch原生优化）、"eager"（基础实现）、"flash_attn"（兼容旧版）、
+                 # "flash_attention_2"（主流优化）、"flash_attention_3"（最新版）等
+                 # 默认值：None（自动从模型config.json中读取）
+                 # 注意：
+                 # 1. 可用性依赖transformers对该模型的支持程度
+                 # 2. 设置为"flash_attn"时，实际会自动使用"flash_attention_2"（向下兼容）
+
+# 新增特殊Token：为模型添加自定义特殊Token
+new_special_tokens: []  # 默认值：[]（无新增Token）
+                        # 用法：
+                        # 1. 直接传入Token列表：["<|user|>", "<|assistant|>"]
+                        # 2. 传入.txt文件路径（每行一个Token）："./special_tokens.txt"
+                        # 示例参考：https://swift.readthedocs.io/zh-cn/latest/Advanced/CustomToken.html
+
+# 分类任务标签数：仅task_type="seq_cls"时生效
+num_labels: None  # 默认值：None（分类任务必须指定，如二分类设为2，多分类设为对应标签数）
+
+# 分类问题类型：仅task_type="seq_cls"时生效
+problem_type: None  # 可选值："regression"（回归）、"single_label_classification"（单标签分类）、"multi_label_classification"（多标签分类）
+                    # 默认值逻辑：
+                    # - 若模型为reward_model或num_labels=1 → "regression"
+                    # - 其他情况 → "single_label_classification"
+
+# RoPE缩放配置：用于扩展模型支持的最大序列长度
+rope_scaling: None  # 用法：
+                    # 1. 传入字符串（需配合max_model_len）：如"linear"、"dynamic"、"yarn"（自动计算缩放系数）
+                    # 2. 传入JSON字符串（直接覆盖config）：如'{"factor":2.0, "type":"yarn"}'
+                    # 默认值：None（使用模型config.json中的默认配置）
+
+# 最大模型序列长度：配合rope_scaling字符串类型使用
+max_model_len: None  # 默认值：None（非None时，会覆盖config.json中的max_position_embeddings）
+                     # 用途：计算RoPE缩放的factor倍数（如rope_scaling="linear"时，factor=max_model_len/原始max_position_embeddings）
+
+# 设备分配配置：控制模型权重在不同设备上的分配
+device_map: None  # 可选值：
+                  # - "auto"：自动分配（默认逻辑）
+                  # - "cpu"：全量加载到CPU
+                  # - JSON字符串：如'{"model.embed_tokens": "cpu", "model.layers": "cuda:0"}'
+                  # - JSON文件路径：如"./device_map.json"
+                  # 说明：透传至transformers.from_pretrained接口，默认根据设备和分布式环境自动设置
+
+# 设备最大内存限制：配合device_map="auto"或"sequential"使用
+max_memory: None  # 格式示例：'{"0": "20GB", "1": "20GB", "cpu": "32GB"}'（指定各设备最大可用内存）
+                  # 说明：透传至transformers.from_pretrained接口，默认自动分配
+
+# 本地仓库路径：用于加载依赖特定GitHub仓库的模型（如deepseek-vl2）
+local_repo_path: None  # 默认值：None（避免git clone网络问题时，传入本地仓库绝对路径）
+
+# 未初始化参数初始化策略：自定义模型架构时，初始化未明确赋值的参数
+init_strategy: None  # 可选值："zero"（零初始化）、"uniform"（均匀分布）、"normal"（正态分布）、
+                     # "xavier_uniform"（Xavier均匀分布）、"xavier_normal"（Xavier正态分布）、
+                     # "kaiming_uniform"（Kaiming均匀分布）、"kaiming_normal"（Kaiming正态分布）、"orthogonal"（正交初始化）
+                     # 默认值：None（不主动初始化，使用模型默认逻辑）

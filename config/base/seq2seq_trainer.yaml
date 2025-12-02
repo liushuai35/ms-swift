@@ -1,0 +1,289 @@
+# ==============================================================================
+# 训练核心配置（含显存优化、优化器、学习率、训练策略等关键参数，适配多任务场景）
+# 适用场景：SFT/RLHF/预训练/多模态训练等所有训练任务
+# ==============================================================================
+
+# ==============================================================================
+# 输出与显存优化配置（控制模型保存路径、显存占用优化）
+# ==============================================================================
+
+output_dir: null  # 训练输出目录（模型、日志、配置文件保存路径）
+                  # 默认值：null（自动设置为"output/<model_name>"，无需手动指定）
+
+gradient_checkpointing: true  # 梯度检查点开关：降低显存占用（以牺牲部分训练速度为代价）
+                              # 建议：显存不足时开启（如单卡训练7B模型），显存充足时可关闭以提速
+                              # 默认值：true
+
+vit_gradient_checkpointing: null  # 多模态模型VIT视觉模块梯度检查点开关
+                                  # 自动逻辑：默认与gradient_checkpointing保持一致
+                                  # 注意事项：
+                                  # 1. 多模态LoRA训练且freeze_vit=false时，若出现"Gradients will be None"警告，需设为false
+                                  # 2. 全参数训练无此问题；RLHF LoRA训练中ref_model的该警告为正常现象
+                                  # 示例参考：https://swift.readthedocs.io/zh-cn/latest/Examples/Multimodal.html
+                                  # 默认值：null
+
+gradient_checkpointing_kwargs: null  # torch.utils.checkpoint的额外参数
+                                     # 示例：'{"use_reentrant": false}'（解决DDP非Deepspeed/FSDP场景下的报错）
+                                     # 自动逻辑：DDP+非Deepspeed/FSDP时，默认设置为'{"use_reentrant": false}'
+                                     # 默认值：null
+
+# ==============================================================================
+# 分布式训练与加速配置（适配多卡/多机训练、高效训练内核）
+# ==============================================================================
+
+deepspeed: null  # DeepSpeed配置：启用ZeRO优化、offload等功能
+                 # 可选值：
+                 # - 内置配置名："zero0"|"zero1"|"zero2"|"zero3"|"zero2_offload"|"zero3_offload"
+                 # - 自定义配置路径：本地DeepSpeed配置文件绝对路径（如"./ds_config.json"）
+                 # 默认值：null（不启用DeepSpeed）
+
+zero_hpz_partition_size: null  # ZeRO++节点内模型分片大小（ZeRO++特性）
+                               # 说明：node内模型分片、node间数据分片，解决grad_norm NaN问题
+                               # 建议：遇到NaN时尝试设置--torch_dtype float16
+                               # 默认值：null
+
+deepspeed_autotp_size: 1  # DeepSpeed AutoTP张量并行大小（仅支持全参数训练）
+                          # 启用条件：需将--deepspeed设为"zero0"/"zero1"/"zero2"
+                          # 默认值：1（不启用张量并行）
+
+ddp_find_unused_parameters: null  # DDP未使用参数检测开关
+                                  # 说明：解决部分模型训练时"unused parameters"警告
+                                  # 默认值：null（自动适配模型类型）
+
+use_liger_kernel: false  # Liger内核加速开关：减少显存消耗、提升训练速度
+                         # 限制：不支持device_map，仅支持task_type="causal_lm"，需多卡DDP/DeepSpeed训练
+                         # 示例参考：https://swift.readthedocs.io/zh-cn/latest/Examples/LigerKernel.html
+                         # 默认值：false
+
+# ==============================================================================
+# 批量与梯度配置（控制训练批量大小、梯度累加与裁剪）
+# ==============================================================================
+
+per_device_train_batch_size: 1  # 单设备训练批量大小（根据显存调整）
+                                # 默认值：1
+
+per_device_eval_batch_size: 1  # 单设备验证批量大小
+                               # 默认值：1
+
+gradient_accumulation_steps: null  # 梯度累加步数（提升有效批量大小）
+                                   # 计算逻辑：total_batch_size = per_device_train_batch_size * gradient_accumulation_steps * world_size
+                                   # 自动逻辑：默认设置为使total_batch_size>=16（GRPO训练默认1）
+                                   # 注意：CPT/SFT中效果等价大batch，RLHF中效果不等价
+                                   # 默认值：null
+
+max_grad_norm: 1.0  # 梯度裁剪阈值（防止梯度爆炸）
+                    # 说明：日志中记录的是裁剪前的grad_norm值
+                    # 默认值：1.0
+
+# ==============================================================================
+# 优化器配置（控制模型参数更新策略）
+# ==============================================================================
+
+weight_decay: 0.1  # 权重衰减系数（防止过拟合）
+                   # 默认值：0.1
+
+adam_beta1: 0.9  # Adam优化器beta1参数（动量相关）
+                 # 默认值：0.9
+
+adam_beta2: 0.95  # Adam优化器beta2参数（自适应学习率相关）
+                  # 默认值：0.95
+
+# ==============================================================================
+# 学习率配置（控制学习率调度策略，适配不同训练场景）
+# ==============================================================================
+
+learning_rate: null  # 基础学习率
+                     # 自动逻辑：全参数训练默认1e-5，LoRA等tuners训练默认1e-4
+                     # 提示：设置min_lr需配合--lr_scheduler_type cosine_with_min_lr --lr_scheduler_kwargs '{"min_lr": 1e-6}'
+                     # 默认值：null
+
+vit_lr: null  # 多模态模型VIT视觉模块学习率
+              # 自动逻辑：默认等于learning_rate（需配合freeze_vit、freeze_aligner使用）
+              # 日志说明：日志中"learning_rate"为param_groups[0]（vit）的学习率，顺序依次为vit→aligner→llm
+              # 默认值：null
+
+aligner_lr: null  # 多模态模型对齐模块学习率
+                  # 自动逻辑：默认等于learning_rate
+                  # 默认值：null
+
+lr_scheduler_type: "cosine"  # 学习率调度器类型
+                             # 默认值："cosine"
+
+lr_scheduler_kwargs: null  # 学习率调度器额外参数（如min_lr）
+                           # 示例：'{"min_lr": 1e-6, "warmup_epochs": 3}'
+                           # 默认值：null
+
+warmup_ratio: 0.0  # 学习率预热比例（总steps的百分比）
+                   # 默认值：0.0
+
+# ==============================================================================
+# 训练周期与停止策略（控制训练时长、强制停止条件）
+# ==============================================================================
+
+num_train_epochs: 3  # 训练总epoch数
+                     # 默认值：3
+
+max_epochs: null  # 强制停止epoch数（流式数据集常用）
+                  # 说明：训练到该epoch时强制退出，并验证保存权重
+                  # 默认值：null
+
+max_steps: -1  # 最大训练steps数（流式数据集必须设置）
+               # 取值：-1表示无限制（按epoch结束），正数表示固定steps数
+               # 默认值：-1
+
+# ==============================================================================
+# 日志与监控配置（控制日志打印、指标监控、可视化工具）
+# ==============================================================================
+
+report_to: "tensorboard"  # 训练监控工具（支持多工具同时启用）
+                          # 可选值："tensorboard"|"wandb"|"swanlab"|"all"（启用所有支持的工具）
+                          # 默认值："tensorboard"
+
+logging_dir: null  # TensorBoard日志保存路径
+                   # 默认值：null（自动设置为f"{output_dir}/runs"）
+
+logging_first_step: true  # 是否记录第一个step的日志
+                          # 默认值：true
+
+logging_steps: 5  # 日志打印间隔（单位：steps）
+                  # 默认值：5
+
+full_determinism: false  # 完全确定性训练（保证结果可复现）
+                         # 注意：会严重影响训练性能，非必要不启用
+                         # 默认值：false
+
+# ==============================================================================
+# 损失函数增强配置（适配特殊训练需求）
+# ==============================================================================
+
+router_aux_loss_coef: 0.0  # MoE模型辅助损失权重（控制专家路由多样性）
+                           # 说明：ms-swift>=3.7.1默认0.0，ms-swift==3.7.0默认从config.json读取
+                           # 默认值：0.0
+
+enable_dft_loss: false  # SFT训练启用DFT（Dynamic Fine-Tuning）损失
+                        # 默认值：false
+
+enable_channel_loss: false  # 启用Channel Loss（按数据渠道分组统计损失）
+                            # 要求：数据集需包含"channel"字段（无该字段则归为None渠道）
+                            # 兼容：支持packing/padding_free/loss_scale等技术
+                            # 数据集参考：https://swift.readthedocs.io/zh-cn/latest/Advanced/ChannelLoss.html
+                            # 注意：ms-swift>=3.8新增，旧版本参考v3.7文档
+                            # 默认值：false
+
+# ==============================================================================
+# 验证与评估配置（控制验证逻辑、指标计算）
+# ==============================================================================
+
+predict_with_generate: false  # 验证时使用生成式评估（而非分类/回归）
+                             # 默认值：false
+
+metric_for_best_model: null  # 最优模型评估指标
+                             # 自动逻辑：
+                             # - predict_with_generate=false → "loss"
+                             # - predict_with_generate=true → "rouge-l"
+                             # - PPO训练 → 无默认值
+                             # - GRPO训练 → "reward"
+                             # 默认值：null
+
+greater_is_better: null  # 指标优劣判断逻辑（越大越好/越小越好）
+                         # 自动逻辑：
+                         # - 指标含"loss" → false（越小越好）
+                         # - 其他指标 → true（越大越好）
+                         # 默认值：null
+
+eval_strategy: null  # 评估策略
+                     # 自动逻辑：
+                     # - 有val_dataset/eval_dataset且split_dataset_ratio>0 → 跟随save_strategy
+                     # - 无验证数据 → "no"
+                     # 可选值："no"|"steps"|"epoch"
+                     # 默认值：null
+
+eval_steps: null  # 评估间隔（单位：steps）
+                  # 自动逻辑：存在评估数据时，跟随save_steps
+                  # 默认值：null
+
+# ==============================================================================
+# 模型保存配置（控制checkpoint保存策略、数量、路径）
+# ==============================================================================
+
+save_strategy: "steps"  # 模型保存策略
+                        # 可选值：
+                        # - "no"：不保存checkpoint
+                        # - "steps"：按steps间隔保存
+                        # - "epoch"：按epoch间隔保存
+                        # 默认值："steps"
+
+save_steps: 500  # 保存间隔（单位：steps，仅save_strategy="steps"生效）
+                 # 默认值：500
+
+save_total_limit: null  # 最大保存checkpoint数量（自动删除过期checkpoint）
+                        # 默认值：null（保存所有checkpoint）
+
+save_on_each_node: false  # 多机训练时是否在每个节点保存权重
+                          # 提示：多机训练建议将output_dir设为共享目录，无需启用该参数
+                          # 默认值：false
+
+save_only_model: false  # 仅保存模型权重（不保存优化器/随机种子状态）
+                        # 优势：减少保存时间和磁盘占用（全参数训练推荐）
+                        # 默认值：false
+
+# ==============================================================================
+# 断点续训配置（控制训练中断后恢复逻辑）
+# ==============================================================================
+
+resume_from_checkpoint: null  # 断点续训路径（指定checkpoint目录）
+                              # 提示：续训需保持其他参数不变，仅增加该参数
+                              # 说明：会恢复模型权重、优化器状态、随机种子和训练steps
+                              # 默认值：null
+
+resume_only_model: false  # 仅恢复模型权重（忽略优化器/随机种子状态）
+                          # 注意：
+                          # - ms-swift>=3.7默认跳过已训练数据（可通过ignore_data_skip控制）
+                          # - 恢复ms-swift<3.7行为需设--ignore_data_skip true
+                          # 默认值：false
+
+ignore_data_skip: false  # 续训时是否跳过已训练数据
+                         # 取值：
+                         # - false：加载训练状态，跳过已训练数据（默认）
+                         # - true：不加载训练状态，从step 0重新训练
+                         # 适用场景：resume_from_checkpoint + resume_only_model同时启用
+                         # 默认值：false
+
+# ==============================================================================
+# 数据加载器配置（控制数据读取效率）
+# ==============================================================================
+
+dataloader_num_workers: null  # 数据加载器并行进程数
+                              # 自动逻辑：Windows平台默认0，其他平台默认1
+                              # 默认值：null
+
+dataloader_pin_memory: true  # 是否将数据加载到GPU显存（加速训练）
+                             # 默认值：true
+
+dataloader_persistent_workers: false  # 是否保持数据加载器进程常驻（提升效率）
+                                      # 默认值：false
+
+dataloader_prefetch_factor: null  # 数据预取因子（提前加载数据）
+                                  # 自动逻辑：dataloader_num_workers>0时默认10
+                                  # 默认值：null
+
+train_dataloader_shuffle: true  # CPT/SFT训练数据加载器是否打乱
+                                # 说明：对IterableDataset无效（流式数据需手动设置打乱）
+                                # 默认值：true
+
+average_tokens_across_devices: false  # 设备间token数平均（精确损失计算）
+                                      # 说明：启用后通过all_reduce同步num_tokens_in_batch
+                                      # 默认值：false
+
+# ==============================================================================
+# Hub推送配置（控制模型推送至ModelScope/HuggingFace Hub）
+# ==============================================================================
+
+push_to_hub: false  # 训练结束后推送checkpoint至Hub
+                    # 默认值：false
+
+hub_model_id: null  # Hub模型ID（如"username/model-name"）
+                    # 默认值：null
+
+hub_private_repo: false  # 是否创建私有Hub仓库
+                         # 默认值：false

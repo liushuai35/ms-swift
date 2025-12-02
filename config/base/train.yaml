@@ -1,100 +1,143 @@
-# 基础：训练参数（与 Swift CLI 训练选项对齐）
+# ==============================================================================
+# 训练增强配置（含训练优化、日志监控、评测、早停等辅助功能，适配全场景训练）
+# 说明：补充核心训练参数之外的增强特性，平衡训练效率、显存占用与实验管理
+# ==============================================================================
 
-# 训练器与阶段：
-# - trainer：训练器类型（seq2seq=有监督微调；rm=奖励模型；ppo/grpo=强化学习）。
-# - stage：当前训练阶段（与上面 trainer 通常保持一致，用于下游逻辑分支）。
-trainer: seq2seq            # 可选：seq2seq | rm | ppo | grpo
-stage: sft                  # 可选：sft | rm | ppo | grpo
+# ==============================================================================
+# 训练基础增强配置（控制输出管理、数据处理优化）
+# ==============================================================================
 
-# 批次与训练步数：
-# - per_device_*_batch_size：单卡批大小；总有效批次=该值*GPU数*gradient_accumulation_steps。
-# - max_steps 与 num_train_epochs 二选一优先生效（max_steps>0 优先）。
-per_device_train_batch_size: 1
-per_device_eval_batch_size: 1
-gradient_accumulation_steps: 1
-max_steps: -1               # >0 则按步数终止；-1 表示按轮数。
-num_train_epochs: 1.0
-seed: 42                    # 全局随机种子（复现实验结果）
-full_determinism: false     # 完全确定性（牺牲性能以换取可复现）
+add_version: true  # 输出目录版本化：在output_dir下新增'<版本号>-<时间戳>'子目录
+                   # 用途：防止多次训练权重覆盖，便于实验追溯
+                   # 默认值：true
 
-# 预热与日志/评估/保存频率：
-warmup_ratio: 0.03          # 预热比例与 warmup_steps 二选一；两者都设定时以 steps 为准。
-warmup_steps: 0
-save_steps: 1000            # 间隔多少步保存一次 checkpoint。
-logging_steps: 10           # 间隔多少步写一次日志。
-eval_steps: 1000            # 间隔多少步跑一次验证集。
-predict_with_generate: false # 文本任务评估时是否用 generate 生成预测（影响速度）
-output_dir: null            # 训练输出目录（别名覆盖）
-logging_dir: null           # 日志目录（TensorBoard/W&B 本地日志）
-add_version: null           # 是否在输出目录追加版本号
-ignore_args_error: null     # 忽略未知参数（CLI 兼容/降噪）
+check_model: true  # 本地模型文件校验：检查模型文件是否损坏/修改并给出提示
+                   # 注意：断网环境下需设为false（避免校验时触发网络请求）
+                   # 默认值：true
 
-# 优化与调度：
-learning_rate: 2.0e-5
-weight_decay: 0.0
-lr_scheduler_type: cosine   # 典型：linear、cosine、cosine_with_restarts、polynomial 等。
-lr_scheduler_kwargs: {}     # 调度器额外关键字参数（如 T_max, min_lr 等）
-adam_beta1: 0.9
-adam_beta2: 0.95
-adam_epsilon: 1.0e-8
-max_grad_norm: 1.0
-gradient_checkpointing: false  # 开启可省显存但增计算；与 Flash-Attn 配置需兼容。
-gradient_checkpointing_kwargs: {} # 梯度检查点额外参数（按实现提供）
-average_tokens_across_devices: false # 统计/日志是否按设备聚合 token 指标
-neftune_noise_alpha: null    # NEFTune 正则强度（数值越大噪声越强）
-use_liger_kernel: false      # 启用 Liger kernel（需要环境支持）
-router_aux_loss_coef: null   # MoE 辅助损失权重（Router loss）
-enable_dft_loss: false       # 启用 DFT 相关损失（特定研究场景）
-enable_channel_loss: false   # 启用通道级损失（特定研究场景）
+create_checkpoint_symlink: false  #  checkpoint软链接创建：生成best/last模型快捷方式
+                                  # 链接路径：f"{output_dir}/best"（最优模型）、f"{output_dir}/last"（最新模型）
+                                  # 用途：简化自动化训练脚本的路径书写
+                                  # 默认值：false
 
-# 日志/评估/保存策略：
-logging_strategy: steps
-evaluation_strategy: steps
-save_strategy: steps
-save_total_limit: 3
-report_to: ["tensorboard"]   # 可选："wandb"、"mlflow" 等；也可多选。
-load_best_model_at_end: false # 若 true，按 metric_for_best_model 在训练末尾回载最佳权重。
-metric_for_best_model: loss
-greater_is_better: false
-logging_first_step: false   # 是否在第 0 步就写日志
-logging_nan_inf_filter: true# 过滤 NaN/Inf 日志
-disable_tqdm: false         # 禁用进度条输出（日志环境下更干净）
+packing: false  # 数据打包优化：将不同长度样本打包为统一长度（提升GPU利用率）
+                # 优势：
+                # 1. 解决长文本拖慢训练速度的问题，实现负载均衡
+                # 2. 使用flash_attn时，保证打包样本内序列互不可见
+                # 支持场景：CPT/SFT/DPO/KTO/GKD
+                # 注意：打包后样本数减少，需手动调整梯度累加数和学习率
+                # 默认值：false
 
-# 计算精度/设备：
-# - fp16/bf16：混合精度；建议按 GPU 架构选择（Ampere+ 推荐 bf16）。
-# - tf32：在 Ampere+ 上可显著提速 FP32 矩阵运算（不改变数值范围）。
-fp16: false
-bf16: false
-tf32: null
-bf16_full_eval: false       # 评估使用 bf16（与硬件匹配）
-fp16_full_eval: false       # 评估使用 fp16（与硬件匹配）
+packing_length: null  # 打包目标长度（统一样本的token长度）
+                      # 默认值：null（自动设为max_length）
 
-# 分布式/大模型策略：
-# - deepspeed：传入 deepspeed json 配置路径或对象。
-# - fsdp 与 fsdp_config：零冗余/FSDP 参数；与 LoRA/量化需配套验证。
-deepspeed: null
-fsdp: null
-fsdp_config: {}
-ddp_find_unused_parameters: null # DDP 是否查找未用参数（模型含条件分支时建议 true）
-dataparallel_backend: null  # ddp | ddp_sharded 等（视框架）
-offload_optimizer: null     # 优化器 offload 至 CPU（常与 deepspeed zero3 搭配）
-offload_model: null         # 模型权重 offload 至 CPU（常与 deepspeed zero3 搭配）
-train_dataloader_shuffle: true   # 训练 dataloader 是否 shuffle（覆盖 dataset_shuffle）
-eval_accumulation_steps: null    # 评测时梯度累积（节省评测显存）
+packing_num_proc: 1  # 打包过程的并行进程数
+                     # 注意：进程数不同会导致最终打包后的数据集不同；流式打包时该参数无效
+                     # 默认值：1
 
-# 数据采样与长度分组：
-# - group_by_length：按样本长度分桶以减少填充，提升吞吐。
-# - length_column_name：指定长度列名（未指定则由数据处理自动估计）。
-group_by_length: false
-length_column_name: null
-train_dataloader_num_workers: 0 # 训练数据加载 worker 数
-eval_dataloader_num_workers: 0  # 验证数据加载 worker 数
-dataloader_num_workers: null    # 别名：若设置则同时覆盖 train/eval 的 num_workers
-pin_memory: true                # dataloader 是否 pin memory
-dataloader_drop_last: false     # 是否丢弃最后一个不足批次的样本
+lazy_tokenize: null  # 惰性分词开关：按需即时分词（而非预先生成所有token）
+                     # 自动逻辑：
+                     # - LLM训练默认false（预先生成分词，提升训练速度）
+                     # - MLLM训练默认true（节约内存，避免预加载大量图像）
+                     # 注意：需图像数据增强时，需设为true（或streaming=true），并修改Template.encode方法
+                     # 默认值：null
 
-# 断点续训：
-resume_from_checkpoint: null  # 传目录或 checkpoint 路径；为 null 则从头开始。
-save_safetensors: true       # 使用 safetensors 格式保存（更安全快速）
-save_on_each_node: false     # 多节点环境下每节点均保存（通常 false）
-save_only_model: false       # 仅保存模型权重（不含优化器/调度器）
+use_logits_to_keep: null  # 无效logits过滤：通过logits_to_keep减少计算与存储
+                          # 优势：降低显存占用、加快训练速度
+                          # 默认值：null（自动根据模型/任务类型选择）
+
+# ==============================================================================
+# 训练评估与生成配置（控制验证时的评估逻辑、生成参数）
+# ==============================================================================
+
+acc_strategy: "token"  # 准确率计算策略（训练/验证时生效）
+                       # 可选值："seq"（序列级准确率）、"token"（token级准确率）
+                       # 默认值："token"
+
+max_new_tokens: 64  # 验证生成最大token数（仅predict_with_generate=true时生效）
+                    # 用途：覆盖默认生成参数，控制验证时的生成长度
+                    # 默认值：64
+
+temperature: 0.0  # 验证生成温度（仅predict_with_generate=true时生效）
+                  # 用途：控制生成多样性（0=确定性生成，越高越随机）
+                  # 默认值：0.0
+
+# ==============================================================================
+# 自定义插件配置（支持自定义优化器、损失函数、评估指标）
+# ==============================================================================
+
+optimizer: null  # 自定义优化器名称（通过plugin扩展）
+                 # 可选值：参考ms-swift插件文档（https://swift.readthedocs.io/zh-cn/latest/Advanced/Plugin.html）
+                 # 默认值：null（使用默认优化器）
+
+loss_type: null  # 自定义损失函数名称（通过plugin扩展）
+                 # 默认值：null（使用模型自带损失函数）
+
+metric: null  # 自定义评估指标名称（通过plugin扩展）
+              # 自动逻辑：predict_with_generate=true时默认设为"nlg"（自然语言生成指标）
+              # 默认值：null
+
+# ==============================================================================
+# Evalscope 评测配置（训练时同步进行专业评测，需单独启用）
+# ==============================================================================
+
+eval_use_evalscope: false  # 是否启用Evalscope评测（训练过程中同步评测）
+                           # 参考示例：https://swift.readthedocs.io/zh-cn/latest/Examples/Evalscope.html
+                           # 默认值：false
+
+eval_dataset: []  # 评测数据集列表（支持多个数据集，空格分隔）
+                  # 示例：["cnn_dailymail", "super_glue"]
+                  # 默认值：[]
+
+eval_dataset_args: null  # 评测数据集参数（JSON格式，支持多数据集配置）
+                         # 示例：'{"cnn_dailymail": {"split": "validation"}, "super_glue": {"tasks": ["mrpc"]}}'
+                         # 默认值：null
+
+eval_limit: null  # 评测数据集采样数（限制每个数据集的评测样本量）
+                  # 默认值：null（使用全量样本）
+
+eval_generation_config: '{"max_tokens": 512}'  # 评测时生成配置（JSON格式）
+                                               # 示例：'{"max_tokens": 1024, "temperature": 0.7}'
+                                               # 默认值：'{"max_tokens": 512}'
+
+# ==============================================================================
+# 训练稳定性与效率优化配置
+# ==============================================================================
+
+use_flash_ckpt: false  # 启用DLRover Flash Checkpoint（异步权重保存）
+                       # 优势：权重先存共享内存，再异步持久化，提升训练效率
+                       # 注意：
+                       # 1. 暂不支持safetensors格式
+                       # 2. 建议搭配环境变量PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True"（避免OOM）
+                       # 默认值：false
+
+early_stop_interval: null  # 早停间隔（基于save_steps，需eval_steps与save_steps一致）
+                           # 逻辑：连续early_stop_interval个周期内best_metric无提升则终止训练
+                           # 扩展：复杂早停需求可覆盖callback.py中的实现
+                           # 默认值：null（不启用早停）
+
+# ==============================================================================
+# SwanLab 监控配置（实验可视化、结果推送，需SwanLab账号）
+# ==============================================================================
+
+swanlab_token: null  # SwanLab API-Key（用于登录认证，获取地址：https://swanlab.cn/settings/api-keys）
+                     # 默认值：null
+
+swanlab_project: null  # SwanLab项目名称（需在SwanLab页面预先创建：https://swanlab.cn/space/~）
+                       # 默认值：null
+
+swanlab_workspace: null  # SwanLab工作空间名称
+                         # 默认值：null（自动使用API-Key对应的用户名）
+
+swanlab_exp_name: null  # 实验名称
+                        # 默认值：null（自动使用output_dir的目录名）
+
+swanlab_lark_webhook_url: null  # 飞书推送Webhook URL（用于实验结果推送）
+                                # 默认值：null
+
+swanlab_lark_secret: null  # 飞书推送密钥（用于验证Webhook请求）
+                           # 默认值：null
+
+swanlab_mode: "cloud"  # SwanLab运行模式
+                       # 可选值："cloud"（云模式，数据存储在SwanLab云端）、"local"（本地模式，数据存储在本地）
+                       # 默认值："cloud"

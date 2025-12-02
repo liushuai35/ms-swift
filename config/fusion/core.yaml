@@ -1,0 +1,15 @@
+# ==============================================
+# Fusion 核心聚合：统一引入 base 层所有通用配置
+# 层级：experiments -> tasks -> fusion -> base
+# 作用：为上层提供完整的通用默认键集合
+# ==============================================
+
+imports:
+  - ../base/model.yaml
+  - ../base/dataset.yaml
+  - ../base/template.yaml
+  - ../base/train.yaml
+  - ../base/generate.yaml
+  - ../base/quantization.yaml
+  - ../base/engines.yaml
+  - ../base/tuner.yaml

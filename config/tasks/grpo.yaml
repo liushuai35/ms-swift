@@ -1,65 +1,296 @@
-# 任务：GRPO（Group Relative Policy Optimization）默认配置
+# ============================================================================== 
+# GRPO（Groupwise Reward Policy Optimization）专属参数（仅rlhf_type="grpo"时生效）
+# 控制GRPO算法的采样生成、奖励计算、损失优化、多模态适配等核心逻辑
+# 说明：参数按功能分组，vLLM集成相关参数需配合use_vllm使用
+# 层级引入：fusion 核心聚合 + rlhf/rollout/infer 组合
+# ==============================================================================
 
-# imports：GRPO 任务通常依赖引擎做在线采样/打分，因此默认引入 engines。
 imports:
-  - ../base/model.yaml
-  - ../base/dataset.yaml
-  - ../base/template.yaml
-  - ../base/train.yaml
-  - ../base/generate.yaml
-  - ../base/quantization.yaml
-  - ../base/engines.yaml
+    - ../fusion/core.yaml
+    - ../fusion/rlhf.yaml
+    - ../fusion/rollout.yaml
+    - ../fusion/infer.yaml
 
-# 顶层键：GRPO 对数据列需求更多，默认不移除未使用列，便于奖励函数读取。
-stage: grpo
-trainer: grpo
-rlhf_type: grpo
-remove_unused_columns: false
-external_plugins: []       # 外部插件（路径列表），用于自定义 reward/执行器等扩展
+# ==============================================================================
+# 基础训练与批量配置
+# ==============================================================================
 
-# GRPO 专属超参（与 Swift 文档对应；不同实现可能字段稍有差异）
-grpo:
-  num_generations: 8         # 每个 prompt 生成候选数（增加计算/显存）。
-  max_prompt_length: 2048    # prompt 最大长度（token）。
-  max_completion_length: 1024# 回答最大长度（token）。
-  beta: 0.05                 # policy 更新强度相关（相当于 KL/温度的平衡项）。
-  gamma: 0.99                # 折扣因子。
-  lam: 0.95                  # GAE 衰减因子。
-  clip_range: 0.2            # PPO/GRPO 裁剪范围。
-  entropy_coef: 0.0          # 熵奖励系数（提升多样性）。
-  vf_coef: 0.5               # 值函数损失权重。
-  grad_accum: 1              # 额外梯度累积（与全局设置叠加需谨慎）。
-  advantage_mode: token      # 优势函数聚合方式：token|sequence 等。
-  normalize_advantage: true  # 是否对优势值做归一化。
-  reward_agg: mean           # 多段奖励聚合：mean | last | sum。
-  reward_funcs: []           # 奖励函数列表（需在代码侧注册实现）。
-  reward_weights: []         # 与 reward_funcs 一一对应的权重。
-  sleep_level: null          # CLI: --sleep_level（vLLM 共置模式常用）
-  log_completions: false     # 记录生成样本（便于排障/分析）
+beta: 0.04  # KL正则系数（控制与参考模型的偏差，0=不加载ref_model）
+            # 默认值：0.04
 
-# 推理引擎（用于在线打分/采样）；默认启用 vLLM，可按需改为 sglang/lmdeploy。
-engine: vllm
-vllm:
-  enable: true
-  # 可选：在 GRPO 中对接 vLLM 服务端（与本地内嵌模式互斥）
-  server:
-    host: null            # 例如 "127.0.0.1"
-    port: 8000
-    base_url: null        # 指定完整 URL 则 host/port 忽略
-    timeout: 240
-    pass_dataset: false
-    async_generate: false
-  mode: null              # server | colocate（与 server.* 互斥）
-  enable_lora: null       # CLI: --vllm_enable_lora
-  max_lora_rank: null     # CLI: --vllm_max_lora_rank
+per_device_train_batch_size: null  # 单设备训练批量大小（GRPO中特指completion批次大小）
+                                   # 默认值：null（继承训练参数默认值）
 
-# GRPO-引擎联动与生成节奏
-generation:
-  steps_per_generation: 1   # 每多少训练步触发一次在线生成
-  truncation: null          # 生成时截断方式（如按模板/列裁剪）
-  stop_words: []            # 附加停止词（覆盖 generate.yaml）
+per_device_eval_batch_size: null  # 单设备评估批量大小（GRPO中特指completion批次大小）
+                                  # 默认值：null（继承训练参数默认值）
 
-# GRPO 训练细化项（按 Swift/实现对齐）
-ds3_gather: false           # Deepspeed stage3 跨进程 gather（大模型/多卡场景）
-loss_type: null             # 损失风格：token|sequence|pair 等
-importance_sampling: false  # 重要性采样开关
+generation_batch_size: null  # 采样completion批量大小
+                             # 约束：需为 num_processes * per_device_train_batch_size 的倍数
+                             # 自动逻辑：默认等于 per_device_batch_size * gradient_accumulation_steps * num_processes
+                             # 注意：与steps_per_generation互斥，只能设置一个
+                             # 默认值：null
+
+steps_per_generation: null  # 每轮生成的优化步数
+                            # 自动逻辑：默认等于gradient_accumulation_steps
+                            # 注意：与generation_batch_size互斥
+                            # 默认值：null
+
+num_generations: 8  # 每个prompt的采样数量（论文中的G值）
+                    # 约束：采样批量大小必须能被num_generations整除
+                    # 默认值：8
+
+ds3_gather_for_generation: true  # DeepSpeed ZeRO-3权重收集开关（提升生成速度）
+                                 # 说明：
+                                 # - True：收集策略模型权重，生成更快，不支持超单卡VRAM模型
+                                 # - False：支持超单卡模型，生成变慢，与vLLM生成不兼容
+                                 # 默认值：true
+
+dataset_shuffle: true  # 数据集随机打乱开关
+                       # 默认值：true
+
+num_iterations: 1  # 每条数据的更新次数（GRPO论文中的T值）
+                   # 默认值：1
+
+# ==============================================================================
+# 输入处理与截断配置
+# ==============================================================================
+
+truncation_strategy: "left"  # 超长输入处理策略
+                             # 可选值：
+                             # - "delete"：删除超长/编码失败样本，并重采样补充
+                             # - "left"：左侧裁剪（注意：多模态模型可能裁剪image_token导致shape mismatch）
+                             # 默认值："left"
+
+overlong_filter: false  # 超长截断样本过滤开关（过滤后不参与loss计算）
+                        # 默认值：false
+
+# ==============================================================================
+# 损失与优势计算配置
+# ==============================================================================
+
+loss_type: "grpo"  # 损失归一化类型
+                   # 可选值：["grpo", "bnpo", "dr_grpo", "dapo", "cispo", "sapo"]
+                   # 参考文档：https://swift.readthedocs.io/zh-cn/latest/Examples/GRPO.html
+                   # 默认值："grpo"
+
+epsilon: 0.2  # 裁剪系数（基础裁剪阈值）
+              # 默认值：0.2
+
+epsilon_high: null  # 上界裁剪系数（设置后构成[epsilon, epsilon_high]裁剪范围）
+                    # 默认值：null
+
+tau_pos: 1.0  # SAPO算法正优势温度参数（控制软门控锐度，越大越锐利）
+              # 默认值：1.0
+
+tau_neg: 1.05  # SAPO算法负优势温度参数（通常大于tau_pos，对负优势约束更强）
+               # 默认值：1.05
+
+delta: null  # 双侧GRPO上界裁剪值（INTELLECT-2技术报告，建议>1+epsilon）
+             # 默认值：null
+
+importance_sampling_level: "token"  # 重要性采样比计算级别
+                                    # 可选值：
+                                    # - "token"：保留每个token的对数概率比（原始逻辑）
+                                    # - "sequence"：平均序列有效token的对数概率比（GSPO论文，稳定训练）
+                                    # 默认值："token"
+
+advantage_estimator: "grpo"  # 优势计算函数
+                             # 可选值：["grpo", "rloo", "reinforce_plus_plus"]
+                             # 默认值："grpo"
+
+kl_in_reward: null  # KL散度正则项处理位置
+                    # 自动逻辑：与advantage_estimator绑定
+                    # - grpo → false（独立正则项）
+                    # - rloo/reinforce_plus_plus → true（并入奖励）
+                    # 默认值：null
+
+scale_rewards: null  # 奖励缩放策略
+                     # 可选值：["group", "batch", "none"]
+                     # 自动逻辑：与advantage_estimator绑定
+                     # - grpo → "group"（组内标准差缩放）
+                     # - rloo → "none"（不缩放）
+                     # - reinforce_plus_plus → "batch"（批次标准差缩放）
+                     # 版本说明：ms-swift<3.10为布尔值，true对应"group"，false对应"none"
+                     # 默认值：null
+
+dynamic_sample: false  # 动态采样开关（筛除组内奖励标准差为0的数据，重采样补充）
+                       # 默认值：false
+
+max_resample_times: 3  # 动态采样的最大重采样次数
+                       # 默认值：3
+
+top_entropy_quantile: 1.0  # 熵值过滤分位数（仅前N分位的token参与loss计算）
+                           # 说明：1.0表示不过滤低熵token
+                           # 参考文档：https://swift.readthedocs.io/zh-cn/latest/Examples/GRPO.html
+                           # 默认值：1.0
+
+log_entropy: false  # 熵值变化日志记录开关
+                    # 参考文档：https://swift.readthedocs.io/zh-cn/latest/Examples/GRPO.html
+                    # 默认值：false
+
+# ==============================================================================
+# 奖励函数配置
+# ==============================================================================
+
+reward_funcs: []  # GRPO奖励函数列表（内置/自定义）
+                  # 内置可选值：["accuracy", "format", "cosine", "repetition", "soft_overlong"]
+                  # 扩展：可在plugin中自定义奖励函数（参考swift/plugin/orm.py）
+                  # 默认值：[]
+
+reward_weights: null  # 奖励函数权重（需与奖励函数+奖励模型总数匹配）
+                      # 自动逻辑：null表示所有奖励权重均为1.0
+                      # 提示：若指定--reward_model，其权重位置在奖励函数最后
+                      # 默认值：null
+
+reward_model_plugin: "orm"  # 奖励模型逻辑插件
+                            # 参考文档：https://swift.readthedocs.io/zh-cn/latest/Advanced/CustomRewardModel.html
+                            # 默认值："orm"
+
+# ==============================================================================
+# 内置奖励函数专属参数
+# ==============================================================================
+
+# cosine奖励函数参数（控制长度与正确性关联的奖励）
+cosine_min_len_value_wrong: -0.5  # 错误答案时最小长度对应的奖励值
+cosine_max_len_value_wrong: 0.0   # 错误答案时最大长度对应的奖励值
+cosine_min_len_value_correct: 1.0 # 正确答案时最小长度对应的奖励值
+cosine_max_len_value_correct: 0.5 # 正确答案时最大长度对应的奖励值
+cosine_max_len: null              # 生成文本最大长度限制（默认等于max_completion_length）
+
+# repetition奖励函数参数（控制重复文本惩罚）
+repetition_n_grams: 3        # 检测重复的n-gram大小
+repetition_max_penalty: -1.0 # 最大惩罚值（控制惩罚强度）
+
+# soft_overlong奖励函数参数（控制长度惩罚区间）
+soft_max_length: null   # 最大生成长度（论文中的L_max，默认等于max_completion_length）
+soft_cache_length: null # 惩罚区间长度（论文中的L_cache，区间[soft_max_length-soft_cache_length, soft_max_length]）
+
+# ==============================================================================
+# 生成日志与多轮配置
+# ==============================================================================
+
+log_completions: false  # 生成内容日志记录开关（配合--report_to wandb/swanlab）
+                        # 补充：未设置report_to时，生成completions.jsonl存储在checkpoint
+                        # 默认值：false
+
+multi_turn_scheduler: null  # 多轮GRPO调度器插件（需在plugin/multi_turn.py实现）
+                            # 默认值：null
+
+max_turns: null  # 多轮GRPO的轮数上限（null表示无限制）
+                 # 默认值：null
+
+completion_length_limit_scope: "per_round"  # 多轮对话max_completion_length限制范围
+                                            # 可选值：
+                                            # - "total"：所有轮次总输出长度限制
+                                            # - "per_round"：每轮输出长度限制
+                                            # 默认值："per_round"
+
+# ==============================================================================
+# vLLM集成配置（生成加速，需use_vllm=true）
+# ==============================================================================
+
+use_vllm: false  # 是否使用vLLM作为GRPO生成推理后端
+                 # 默认值：false
+
+vllm_mode: "colocate"  # vLLM集成模式
+                       # 可选值：
+                       # - "server"：通过swift rollout拉起vLLM服务器采样
+                       # - "colocate"：程序内部署vLLM采样
+                       # 默认值："colocate"
+
+async_generate: false  # 异步rollout开关（提升训练速度）
+                       # 注意：开启后使用上一轮更新的模型采样，不支持多轮场景
+                       # 默认值：false
+
+# ==============================================================================
+# vllm_mode=server 专属参数（通过vLLM服务器采样）
+# ==============================================================================
+
+vllm_server_host: null  # vLLM服务器IP地址
+                        # 默认值：null
+
+vllm_server_port: 8000  # vLLM服务器端口
+                        # 默认值：8000
+
+vllm_server_base_url: null  # vLLM服务器基础URL（如"http://localhost:8000"）
+                            # 说明：设置后忽略host和port
+                            # 默认值：null
+
+vllm_server_timeout: 240  # vLLM服务器连接超时时间（单位：秒）
+                          # 默认值：240
+
+vllm_server_pass_dataset: false  # 透传数据集信息到vLLM服务器（多轮训练专用）
+                                 # 默认值：false
+
+# 环境变量：权重同步传输桶大小（Server Mode全参数训练专用）
+# SWIFT_UPDATE_WEIGHTS_BUCKET_SIZE: 512  # 单位：MB，默认512MB
+
+# ==============================================================================
+# vllm_mode=colocate 专属参数（内部署vLLM，透传vLLM核心参数）
+# ==============================================================================
+
+vllm_gpu_memory_utilization: 0.9  # GPU内存占用比例（0~1）
+                                  # 默认值：0.9
+
+vllm_max_model_len: null  # 模型最大序列长度（默认从config.json读取）
+                          # 默认值：null
+
+vllm_enforce_eager: false  # 使用PyTorch Eager模式（禁用CUDA Graph，节约显存）
+                           # 默认值：false
+
+vllm_limit_mm_per_prompt: null  # 单prompt多模态输入数量限制（如'{"image":5}'）
+                                # 默认值：null
+
+vllm_enable_prefix_caching: true  # 启用vLLM自动前缀缓存（加速重复前缀处理）
+                                  # 默认值：true
+
+vllm_tensor_parallel_size: 1  # vLLM张量并行数
+                              # 默认值：1
+
+vllm_enable_lora: false  # vLLM加载LoRA适配器开关（加速LoRA权重同步）
+                         # 参考文档：https://swift.readthedocs.io/zh-cn/latest/Examples/GRPO.html
+                         # 默认值：false
+
+sleep_level: 0  # vLLM显存释放级别（训练时释放冗余显存）
+                # 可选值：0（不释放）、1（部分释放）、2（完全释放）
+                # 默认值：0
+
+offload_optimizer: false  # vLLM推理时卸载优化器参数（节约显存）
+                          # 默认值：false
+
+offload_model: false  # vLLM推理时卸载模型（节约显存）
+                      # 默认值：false
+
+# ==============================================================================
+# 训推不一致校正配置
+# ==============================================================================
+
+rollout_importance_sampling_mode: null  # 训推不一致校正模式
+                                        # 可选值：["token_truncate", "token_mask", "sequence_truncate", "sequence_mask"]
+                                        # 说明：null表示不启用校正
+                                        # 参考文档：https://swift.readthedocs.io/zh-cn/latest/Examples/GRPO.html
+                                        # 默认值：null
+
+rollout_importance_sampling_threshold: 2.0  # 重要性采样权重阈值（截断/屏蔽极端权重）
+                                            # 默认值：2.0
+
+# ==============================================================================
+# 参考模型同步配置
+# ==============================================================================
+
+sync_ref_model: false  # 定期同步参考模型开关
+                       # 默认值：false
+
+ref_model_mixup_alpha: 0.6  # 模型混合系数（更新公式：ref_model = alpha*model + (1-alpha)*old_ref_model）
+                            # 默认值：0.6
+
+ref_model_sync_steps: 512  # 参考模型同步频率（单位：steps）
+                           # 默认值：512
+
+# ==============================================================================
+# 模型参数移动配置
+# ==============================================================================
+
+move_model_batches: null  # 模型参数移动批次数量（拆分layers传输）
+                          # 说明：null表示不拆分，否则拆分为 move_model_batches+1（非layer参数）+1（多模态参数） 个批次
+                          # 默认值：null

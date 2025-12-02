@@ -1,71 +1,140 @@
-# 推理引擎参数（vLLM / SGLang / LMDeploy）
+# ==============================================================================
+# 推理引擎核心配置（含vLLM/SGLang两大高效推理引擎参数，适配生成/多模态推理场景）
+# 说明：根据使用的引擎自动匹配对应参数，未启用的引擎参数可忽略
+# ==============================================================================
 
-# 顶层选择：
-# - engine: 选择推理后端，若为 null 则使用 HF Transformers 原生 generate。
-#   常见：vllm（吞吐高、KV/offload 支持好）、sglang（低延迟流式）、lmdeploy（英伟达/国产 GPU 优化）。
-engine: null                # 可选：null | vllm | sglang | lmdeploy
-use_vllm: null              # 别名：true 等价于 engine=vllm（与 engine 互斥时以 engine 为准）
+# ==============================================================================
+# vLLM 引擎参数（适配vLLM高效推理，参数含义参考vLLM官方文档）
+# 启用场景：swift infer/deploy/rollout 命令，支持单卡/多卡并行、多模态推理
+# ==============================================================================
 
-# vLLM 配置（高吞吐推理后端）：
-vllm:
-  enable: false                 # 为 true 时表示训练/评测期间通过 vLLM 进行生成/打分。
-  mode: null                    # vLLM 模式：server | colocate（与 server 字段联动）
-  trust_remote_code: true       # 允许加载含自定义代码的模型（社区大模型常需）。
-  enforce_eager: false          # 强制 eager（调试用，性能差）。
-  max_model_len: 4096           # 模型最大上下文长度（需与模型 rope/pos_embeddings 一致）。
-  max_num_seqs: null            # 并发序列上限（根据显存/吞吐调参）。
-  tensor_parallel_size: 1       # 张量并行切分数（多卡切分）。
-  pipeline_parallel_size: null  # 管线并行切分数（通常与长序列/多层分段相关）。
-  data_parallel_size: null      # 数据并行副本数量（服务端集群/多实例场景）。
-  dtype: auto                   # 模型精度：auto|float16|bfloat16|float32 等。
-  gpu_memory_utilization: 0.9   # GPU 显存利用率上限（0~1）。
-  swap_space: 4                 # CPU 交换空间（GB），缓解显存紧张。
-  max_logprobs: null            # 返回 logprobs 的 top-k 数（仅当需要对数概率时设置）。
-  max_num_batched_tokens: null  # 单批次最大 token 数（调优吞吐用）。
-  disable_log_requests: false   # 关闭请求日志（减少 IO）。
-  enable_lora: false            # vLLM 侧启用 LoRA（GRPO/rollout 常用）
-  max_lora_rank: null           # vLLM 侧 LoRA 最大秩
-  # 服务器模式（用于 GRPO/评测对接）：当以独立服务方式连入 vLLM 时使用
-  server:
-    host: null                  # vLLM 服务主机名，例如 "127.0.0.1"
-    port: 8000                  # vLLM 服务端口
-    base_url: null              # 完整 Base URL；设置后优先生效
-    timeout: 240                # 客户端请求超时（秒）
-    pass_dataset: false         # 是否将数据集对象传给服务端（特定接口）
-    async_generate: false       # 使用异步生成（提升吞吐）
+vllm_gpu_memory_utilization: 0.9  # GPU内存占用比例（0~1之间）
+                                 # 注意：ms-swift<3.7版本参数名为gpu_memory_utilization（下同）
+                                 # 默认值：0.9
 
-# SGLang 配置（轻量推理/服务）：
-sglang:
-  enable: false
-  max_tokens: 512              # 单次生成的最大 token。
-  n: 1                         # 生成候选 n（注意消耗）。
-  return_logprob: false        # 是否返回概率（仅部分接口支持）。
-  tensor_parallel_size: null   # 张量并行（与后端部署一致）
-  pipeline_parallel_size: null # 管线并行
-  data_parallel_size: null     # 数据并行
-  disable_custom_all_reduce: false # 关闭自定义 AllReduce（兼容性）
-  kv_cache_dtype: null         # KV 精度：auto|fp16|fp8 等
-  enable_dp_attention: false   # 数据并行注意力（部分版本支持）
-  speculative:                 # 推测式解码选项
-    enable: false
-    algorithm: null            # 例如：eagle|medusa|draft
-    steps: null                # 推测步数
-    eagle_topk: null           # EAGLE 算法 top-k
+vllm_tensor_parallel_size: 1  # 张量并行（TP）数量（多卡推理时调整）
+                              # 默认值：1
 
-# LMDeploy 配置（推理加速/部署）：
-lmdeploy:
-  enable: false
-  session_len: 4096            # 会话上下文长度。
-  cache_max_entry_count: 0.8   # KV cache 占显存比例上限（0~1）。
-  tp: 1                        # 张量并行切分数。
-  quant_policy: null           # 量化策略（LMDeploy 专有）
-  vision_batch_size: null      # 多模态场景下视觉批大小
+vllm_pipeline_parallel_size: 1  # 流水线并行（PP）数量
+                                # 默认值：1
 
-# 通用推理/评测集成参数（跨引擎统一入口，可在实验覆盖）
-integration:
-  infer_backend: null          # 统一推理后端：vllm|sglang|lmdeploy|transformers
-  sampler_engine: null         # 采样引擎（tests 中使用）：pt|client|vllm|sglang|lmdeploy
-  max_batch_size: null         # 统一最大批大小
-  result_path: null            # 结果输出目录
-  write_batch_size: null       # 结果写入批大小（大评测降低 IO 压力）
-  engine_kwargs: null          # 引擎附加参数（JSON 字符串/字典），如 client 模式 base_url/api_key
+vllm_data_parallel_size: 1  # 数据并行（DP）数量
+                            # 生效场景：swift deploy/rollout 命令
+                            # 补充：swift infer中通过NPROC_PER_NODE设置DP数量（示例参考：https://swift.readthedocs.io/zh-cn/latest/Examples/vLLM.html）
+                            # 默认值：1
+
+vllm_enable_expert_parallel: false  # 是否启用专家并行（MoE模型专用）
+                                    # 默认值：false
+
+vllm_max_num_seqs: 256  # 单次迭代处理的最大序列数（控制并发量）
+                        # 默认值：256
+
+vllm_max_model_len: null  # 模型支持的最大序列长度
+                          # 默认值：null（自动从模型config.json读取）
+
+vllm_disable_custom_all_reduce: true  # 禁用自定义all-reduce内核（回退到NCCL，提升稳定性）
+                                      # 默认值：true
+
+vllm_enforce_eager: false  # 是否使用PyTorch Eager模式（禁用CUDA Graph）
+                           # 优势：节约显存；劣势：降低推理效率
+                           # 默认值：false
+
+vllm_mm_processor_cache_gb: 4  # 多模态处理器缓存大小（GiB）
+                               # 用途：缓存已处理的图像/视频，避免重复预处理
+                               # 取值：0=禁用缓存（不推荐，降低性能）
+                               # 生效场景：仅对多模态模型生效
+                               # 默认值：4
+
+vllm_speculative_config: null  # 推测解码配置（JSON字符串格式）
+                               # 示例：'{"draft_model": "Qwen2-0.5B-Instruct", "num_speculative_tokens": 5}'
+                               # 默认值：null
+
+vllm_disable_cascade_attn: false  # 强制关闭V1引擎的cascade attention（防止数值误差）
+                                  # 默认值：false（由vLLM内部逻辑自动决定）
+
+vllm_limit_mm_per_prompt: null  # 单条提示的多模态输入数量限制
+                                # 示例：'{"image": 5, "video": 2}'（最多5张图+2个视频）
+                                # 默认值：null
+
+vllm_max_lora_rank: 16  # vLLM支持的最大LoRA rank（LoRA推理专用）
+                        # 默认值：16
+
+vllm_quantization: null  # vLLM内部量化方法（支持的取值详见vLLM文档）
+                         # 示例："awq"、"gptq"、"squeezellm"
+                         # 默认值：null
+
+vllm_enable_prefix_caching: null  # 启用自动前缀缓存（加速重复查询前缀的推理）
+                                  # 注意：ms-swift<3.9.1版本默认值为false
+                                  # 默认值：null（跟随vLLM原生行为）
+
+vllm_use_async_engine: null  # 是否使用异步引擎（vLLM backend）
+                             # 自动逻辑：swift deploy默认true，其他场景默认false
+                             # 默认值：null
+
+vllm_reasoning_parser: null  # 推理解析器类型（用于思维链内容解析）
+                             # 生效场景：仅swift deploy命令
+                             # 可选值：参考vLLM官方文档
+                             # 默认值：null
+
+vllm_engine_kwargs: null  # vLLM引擎额外参数（JSON字符串格式）
+                          # 示例：'{"enable_lora": true, "lora_adapter_path": "./adapter"}'
+                          # 默认值：null
+
+# ==============================================================================
+# SGLang 引擎参数（适配SGLang高效推理，参数含义参考SGLang官方文档）
+# 启用场景：swift infer/deploy 命令，支持MoE模型、推测解码优化
+# ==============================================================================
+
+sglang_tp_size: 1  # 张量并行（TP）数量
+                   # 默认值：1
+
+sglang_pp_size: 1  # 流水线并行（PP）数量
+                   # 默认值：1
+
+sglang_dp_size: 1  # 数据并行（DP）数量
+                   # 默认值：1
+
+sglang_ep_size: 1  # 专家并行（EP）数量（MoE模型专用）
+                   # 默认值：1
+
+sglang_enable_ep_moe: false  # 是否启用EP MoE（专家并行）
+                             # 注意：该参数已在最新SGLang版本中移除
+                             # 默认值：false
+
+sglang_mem_fraction_static: null  # 静态内存分配比例（模型权重+KV缓存）
+                                  # 用途：GPU内存不足时降低该值
+                                  # 默认值：null
+
+sglang_context_length: null  # 模型最大上下文长度
+                             # 默认值：null（自动从模型config.json读取）
+
+sglang_disable_cuda_graph: false  # 禁用CUDA Graph（降低推理效率，提升兼容性）
+                                  # 默认值：false
+
+sglang_quantization: null  # 量化方法（如"awq"、"gptq"）
+                           # 默认值：null
+
+sglang_kv_cache_dtype: "auto"  # KV缓存的数据类型
+                               # 可选值："auto"（跟随模型 dtype）、"fp8_e5m2"、"fp8_e4m3"（需CUDA≥11.8）
+                               # 默认值："auto"
+
+sglang_enable_dp_attention: false  # 注意力机制启用数据并行，FFN启用张量并行
+                                   # 要求：dp_size = tp_size
+                                   # 支持模型：DeepSeek-V2/3、Qwen2/3 MoE
+                                   # 默认值：false
+
+sglang_disable_custom_all_reduce: true  # 禁用自定义all-reduce内核（回退到NCCL，提升稳定性）
+                                        # 默认值：true
+
+sglang_speculative_algorithm: null  # 推测解码算法
+                                    # 可选值：null、"EAGLE"、"EAGLE3"、"NEXTN"、"STANDALONE"、"NGRAM"
+                                    # 默认值：null
+
+sglang_speculative_num_steps: null  # 推测解码中草稿模型的采样步数
+                                    # 默认值：null
+
+sglang_speculative_eagle_topk: null  # EAGLE2算法中每步采样的token数量
+                                     # 默认值：null
+
+sglang_speculative_num_draft_tokens: null  # 推测解码中草稿模型的总采样token数量
+                                           # 默认值：null

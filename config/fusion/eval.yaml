@@ -1,0 +1,56 @@
+# ==============================================================================
+# 评测核心配置（控制评测后端、数据集、并发量与结果存储，适配模型性能评估场景）
+# 引入 base 通用键：模型/数据/生成/引擎等
+imports:
+    - ./core.yaml
+# 适用场景：swift eval 命令，支持本地/远程评测、多后端适配
+# ==============================================================================
+
+eval_backend: "Native"  # 评测后端（选择评测框架）
+                        # 可选值：
+                        # - "Native"：swift原生评测（轻量、适配性强）
+                        # - "OpenCompass"：OpenCompass评测框架（全面、支持多任务）
+                        # - "VLMEvalKit"：VLMEvalKit评测框架（专注多模态评测）
+                        # 默认值："Native"
+
+eval_dataset: []  # 评测数据集列表（需参考评测文档选择支持的数据集）
+                  # 示例：["cnn_dailymail", "super_glue", "mmbench"]
+                  # 参考文档：https://swift.readthedocs.io/zh-cn/latest/Examples/Evaluation.html
+                  # 默认值：[]
+
+eval_limit: null  # 每个评测数据集的采样数（限制评测规模，加快测试速度）
+                  # 取值：null=使用全量样本，正数=固定采样数
+                  # 默认值：null
+
+eval_output_dir: "eval_output"  # 评测结果存储目录（存放评测报告、日志等）
+                                # 默认值："eval_output"
+
+temperature: 0.0  # 评测时生成温度（覆盖默认生成参数，控制多样性）
+                  # 取值：0.0=确定性生成（保证结果可复现），越高越随机
+                  # 默认值：0.0
+
+eval_num_proc: 16  # 评测客户端最大并发数（控制评测效率，适配硬件资源）
+                   # 建议值：根据CPU核心数调整，避免并发过高导致资源竞争
+                   # 默认值：16
+
+eval_url: null  # 远程评测URL（对接已部署的模型服务进行评测）
+                # 示例："http://localhost:8000/v1"（本地部署服务）
+                # 参考示例：https://swift.readthedocs.io/zh-cn/latest/Examples/Evaluation.html
+                # 自动逻辑：null时采用本地部署评估（直接加载模型）
+                # 默认值：null
+
+eval_generation_config: null  # 评测时模型推理配置（JSON字符串格式）
+                              # 示例：'{"max_new_tokens": 512, "top_p": 0.95}'
+                              # 用途：自定义评测时的生成参数（如最大长度、采样策略）
+                              # 默认值：null
+
+extra_eval_args: "{}"  # 额外评测参数（JSON字符串格式，仅Native评测有效）
+                       # 示例：'{"batch_size": 8, "timeout": 300}'
+                       # 参考文档：https://swift.readthedocs.io/zh-cn/latest/Examples/Evaluation.html
+                       # 默认值："{}"（无额外参数）
+
+local_dataset: false  # 本地数据集下载开关（适配需额外数据包的评测集，如CMB）
+                      # 逻辑：
+                      # - true：自动下载全量数据包到当前目录data文件夹（仅下载一次，后续缓存）
+                      # - false：使用默认路径~/.cache/opencompass下的数据集
+                      # 默认值：false

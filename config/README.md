@@ -50,3 +50,34 @@ python ms-swift/tools/validate_configs.py
 提示
 - 文件未列全所有参数，仅覆盖了 Swift 文档“命令行参数”中最常用和关键的字段，保留 `null`/空值以沿用框架默认。
 - 你可以自由增删字段；若使用 Hydra/Lightning 等框架，可将 `imports` 改为其 `defaults` 机制。
+
+
+CUDA_VISIBLE_DEVICES: 控制使用哪些GPU卡。默认使用所有卡。
+
+ASCEND_RT_VISIBLE_DEVICES: 控制使用哪些NPU卡（只对ASCEND卡生效）。默认使用所有卡。
+
+MODELSCOPE_CACHE: 控制缓存路径。（多机训练时建议设置该值，以确保不同节点使用相同的数据集缓存）
+
+PYTORCH_CUDA_ALLOC_CONF: 推荐设置为'expandable_segments:True'，这将减少GPU内存碎片，具体请参考torch文档。
+
+NPROC_PER_NODE: torchrun中--nproc_per_node的参数透传。默认为1。若设置了NPROC_PER_NODE或者NNODES环境变量，则使用torchrun启动训练或推理。
+
+MASTER_PORT: torchrun中--master_port的参数透传。默认为29500。
+
+MASTER_ADDR: torchrun中--master_addr的参数透传。
+
+NNODES: torchrun中--nnodes的参数透传。
+
+NODE_RANK: torchrun中--node_rank的参数透传。
+
+LOG_LEVEL: 日志的level，默认为'INFO'，你可以设置为'WARNING', 'ERROR'等。
+
+SWIFT_DEBUG: 在engine.infer(...)时，若设置为'1'，PtEngine将会打印input_ids和generate_ids的内容方便进行调试与对齐。
+
+VLLM_USE_V1: 用于切换vLLM使用V0/V1版本。
+
+SWIFT_TIMEOUT: (ms-swift>=3.10) 若多模态数据集中存在图像URL，该参数用于控制获取图片的timeout，默认为20s。
+
+ROOT_IMAGE_DIR: (ms-swift>=3.8) 图像（多模态）资源的根目录。通过设置该参数，可以在数据集中使用相对于 ROOT_IMAGE_DIR 的相对路径。默认情况下，是相对于运行目录的相对路径。
+
+SWIFT_SINGLE_DEVICE_MODE: (ms-swift>=3.10) 单设备模式，可选值为"0"(默认值)/"1"，在此模式下，每个进程只能看到一个设备

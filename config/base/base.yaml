@@ -1,0 +1,60 @@
+# ==============================================================================
+# 微调与模型加载核心补充配置（含详细注释，适配多场景使用）
+# ==============================================================================
+
+# 微调后端选择：控制微调框架，影响支持的微调类型与速度
+tuner_backend: "peft"  # 可选值：'peft'（HuggingFace PEFT库，稳定支持所有微调类型）、'unsloth'（快速微调，仅支持LoRA/QLoRA）；默认值：'peft'
+
+# 微调类型选择：指定模型微调的具体方式
+train_type: "lora"  # 可选值：'lora'（显存高效微调，默认）、'full'（全参训练）、'longlora'（长文本LoRA）、'adalora'（自适应LoRA）、
+                    # 'llamapro'（LlamaPro专属微调）、'adapter'（Adapter微调）、'vera'（注意力层高效微调）、'boft'（块级高效微调）、
+                    # 'fourierft'（傅里叶长文本微调）、'reft'（基于检索的微调）；默认值：'lora'
+
+# Adapter路径/ID列表：用于加载预训练的Adapter权重
+adapters: []  # 格式为列表，例如["username/adapter-xxx", "./local_adapter"]；默认值：[]
+              # 主要用途：
+              # 1. 推理/部署命令中加载微调后的Adapter（如：swift infer --model 'model_id' --adapters 'adapter_id'）
+              # 2. 断点续训（仅读取Adapter权重，不加载优化器状态、随机种子，不跳过已训练数据集）
+              # 与resume_from_checkpoint的区别：后者会恢复完整训练状态（含优化器、数据进度），前者仅恢复模型权重
+
+# 外部插件文件列表：加载自定义插件模块
+external_plugins: []  # 传入plugin.py文件路径列表（如["./my_plugin.py"]），文件会被自动import注册；默认值：[]
+                      # 示例参考：https://swift.readthedocs.io/zh-cn/latest/Advanced/Plugin.html
+
+# 全局随机种子：控制模型初始化、训练过程中的随机性（保证可复现）
+seed: 42  # 默认值：42；注意：该种子与控制数据集拆分/打乱的data_seed相互独立，互不影响
+
+# 特定模型额外参数：为特殊模型传入专属配置（如多模态模型的帧处理参数）
+model_kwargs: null  # 格式为字典（如{"fps_max_frames": 12}），或通过环境变量设置（如FPS_MAX_FRAMES=12）；默认值：None
+                    # 注意事项：
+                    # 1. 训练时指定的模型参数，推理时需同步设置，确保效果对齐
+                    # 2. 训练/推理时会打印该参数列表，便于核对
+                    # 3. 参数含义参考对应模型官方仓库或推理代码，ms-swift引入该参数是为了与官方推理效果一致
+
+# 加载保存的参数配置：控制是否读取checkpoint/adapter中的args.json
+load_args: false  # 触发场景：指定--resume_from_checkpoint、--model、--adapters时生效
+                  # 读取范围：args.json中的基础参数（详见base_args.py）
+                  # 默认值：推理/导出时为True，训练时为False；通常无需手动修改
+
+# 加载数据相关参数：是否额外读取args.json中的数据处理参数
+load_data_args: false  # 默认值：False；用途：推理时复用训练时的数据集配置（如切分的验证集）
+                       # 示例命令：swift infer --adapters xxx --load_data_args true --stream true --max_new_tokens 512
+
+# 仓库选择：控制模型、数据集的下载源与推送目标
+use_hf: false  # 默认值：False（使用ModelScope）；设为True时使用HuggingFace
+
+# Hub访问令牌：用于私有模型/数据集的下载、模型推送
+hub_token: null  # ModelScope Hub Token获取地址：https://modelscope.cn/docs/%E7%94%A8%E6%88%B7%E6%9D%83%E9%99%90%E7%AE%A1%E7%90%86/AccessToken%E7%94%B3%E8%AF%B7%E4%B8%8E%E4%BD%BF%E7%94%A8；默认值：None
+
+# 自定义注册文件路径：加载自定义模型、对话模板、数据集的注册文件
+custom_register_path: []  # 传入.py文件路径列表（如["./my_register.py"]），文件会被自动import；默认值：[]
+
+# DDP超时时间：分布式训练（DDP）的超时阈值
+ddp_timeout: 18000000  # 单位：秒；默认值：18000000（5小时），适配长时训练场景
+
+# DDP后端选择：分布式训练的通信后端
+ddp_backend: null  # 可选值："nccl"（GPU推荐）、"gloo"（CPU/GPU通用）、"mpi"、"ccl"、"hccl"（华为GPU）、"cncl"、"mccl"；
+                   # 默认值：None（自动根据硬件环境选择最优后端）
+
+# 忽略参数错误：兼容Jupyter Notebook等交互式环境
+ignore_args_error: false  # 默认值：False；交互式环境中若出现参数解析错误，可设为True兼容

@@ -2,35 +2,18 @@
 
 # 生成长度与采样分布
 max_new_tokens: 512           # 最大新生成 token 数。
-min_new_tokens: null          # 最少生成 token 数（控制早停）
-temperature: 0.7              # 温度采样（>1 更发散，<1 更保守）。
-top_p: 0.9                    # nucleus sampling：累积概率阈值。
+temperature: 0.7              # 温度采样（>1 更发散，<1 更保守）。 保留概率最高的top_k数量 tokens用于生成，默认为None。读取'generation_config.json'。
+top_p: 0.9                    # nucleus sampling：累积概率阈值。 保留概率最高的累计概率达到 top_p 的tokens用于生成，默认为None。读取generation_config.json。
 top_k: 50                     # 只在 top-k 候选中采样。
-typical_p: null               # typical sampling 阈值（与 top_p 互斥使用）
-repetition_penalty: 1.0       # 重复惩罚（>1 惩罚重复）。
-presence_penalty: 0.0         # 存在惩罚（类似 OpenAI 风格）。
-frequency_penalty: 0.0        # 频率惩罚（类似 OpenAI 风格）。
+repetition_penalty: 1.0       # 重复惩罚（>1 惩罚重复）。1.0 表示不进行惩罚。默认为None，读取generation_config.json。
 
 # 搜索/beam 相关
-early_stopping: false         # beam search 提前停止。
-length_penalty: 1.0           # beam 长度惩罚。
-no_repeat_ngram_size: 0       # 禁止重复的 n-gram 大小（>0 则启用）。
-beam_search: false            # 是否使用 beam search（启用则通常关闭随机采样）。
-num_beams: 1                  # beam 数量。
-diversity_penalty: 0.0        # 多样性惩罚（多组 beam 时生效）。
-beam_group: 1                 # beam 组数（用于 diverse beam）。
+num_beams: 1                  # beam search的并行保留数量，默认为1。
 
 # 其他生成行为
-do_sample: true               # 是否启用随机采样（与 beam_search 互斥使用为佳）。
-use_cache: true               # 生成时使用 KV cache（显著提速）。
-stream: false                 # 流式输出（需要前端/引擎支持）。
-stop_words: []                # 自定义停止词列表，例如：["</s>", "<|endoftext|>"]。
-num_return_sequences: 1       # 返回候选数（>1 增加计算）
-return_dict_in_generate: false# 返回结构化字典（含 scores 等）
-output_scores: false          # 是否返回 scores（与 return_dict_in_generate 相关）
-seed: null                    # 生成的随机种子（便于复现实验）
+stream: false                 # 流式输出（需要前端/引擎支持）。，默认为None，即使用交互式界面时为True，数据集批量推理时为False。"ms-swift<3.6"stream默认值为False。
+stop_words: []                # 除了eos_token外额外的停止词，默认为[]。注意：eos_token会在输出respsone中被删除，额外停止词会在输出中保留。
 
 # 引擎专属（如 vLLM/SGLang）
 logprobs: null                # 是否返回 token 级对数概率（布尔或与引擎语义一致）。
 top_logprobs: null            # 返回每步 top-k 的概率明细（优先使用该键）。
-n_tokens: null                # 兼容别名：返回 top-n（与 top_logprobs 等价，建议使用 top_logprobs）。

@@ -1,52 +1,121 @@
-# 基础：模板/分词与打包（Format 与 Tokenization）
+# ==============================================================================
+# 模板与分词打包核心配置（控制对话格式、tokenization、样本打包逻辑，适配生成/多模态/Agent任务）
+# 适用场景：SFT/RLHF/推理/预训练等所有需要格式化输入的任务
+# ==============================================================================
 
-# 模板与系统提示：
-# - template：决定对话格式（如 chatml、mistral、qwen2、llama3 等）。
-#   auto 表示根据模型名称自动推断默认模板。
-# - system：全局系统提示词；若模板支持系统角色，将插入至对话开端。
-template: auto              # 例如：auto|default|alpaca|chatml|mistral|qwen2|llama3
-system: null
+# ==============================================================================
+# 对话模板与系统提示配置（控制输入格式标准化，匹配模型训练/推理预期）
+# ==============================================================================
 
-# 分词与截断：
-# - max_length：单条样本（或打包后的序列）的最大 token 长度。
-# - truncation_strategy：超长截断策略；
-#   longest_first（从长的一端截断）、longest_from_left（保留右侧结尾）、discard（直接丢弃超长样本）。
-max_length: 4096
-truncation_strategy: longest_first
-truncation_side: right       # left | right（通常 right）
+template: "auto"  # 对话模板类型：决定对话的格式规范（如角色分隔、换行符等）
+                  # 可选值：
+                  # - "auto"：根据模型名称自动推断默认模板（推荐，无需手动指定）
+                  # - 内置模板名："default"|"alpaca"|"chatml"|"mistral"|"qwen2"|"llama3"等
+                  # 默认值："auto"
 
-# 高效打包与 padding：
-# - padding_free：无填充训练（需要配套实现与位置编码支持）。
-# - packing：样本拼接打包以提升吞吐（注意要确保 labels 与 attention_mask 对齐）。
-# - s2s：是否视为序列到序列任务（encoder-decoder 架构或需要特殊 loss 处理的场景）。
-padding_free: false
-packing: false
-packing_length: null         # 打包后的目标长度（与 max_length 配合，优先该项）
-packing_num_proc: 1          # 打包并行进程数（datasets.map 并行）
-s2s: false
-padding_side: right          # left | right；与 tokenizer 对齐
-add_bos_token: null          # 是否在输入前添加 BOS（null=按模型默认）
-add_eos_token: null          # 是否在末尾添加 EOS（null=按模型默认）
+system: null  # 全局系统提示词：模板支持系统角色时，将插入对话开端
+              # 支持格式：
+              # - 直接传入字符串（如"你是专业的技术助手"）
+              # - 本地txt文件路径（如"./system_prompt.txt"，每行内容作为system prompt）
+              # 优先级规则：数据集中的system字段 > 此处配置 > 注册模板时的默认system
+              # 默认值：null（使用模板默认system prompt）
 
-# 图像/多模态：
-# - max_pixels：限制图像像素数（如 1024*1024），避免显存溢出。
-# - image_aspect_ratio：图像长宽比处理策略（pad=等比填充；square=裁剪为方形；none=不处理）。
-max_pixels: null
-image_aspect_ratio: pad     # pad | square | none
+# ==============================================================================
+# 分词与截断配置（控制tokenization后样本的长度，避免超长导致OOM）
+# ==============================================================================
 
-# 损失函数与标签处理：
-# - loss_scale：在低比特量化训练时可调大以稳定收敛（实现相关）。
-# - label_smoothing：标签平滑。
-# - ignore_pad_token_for_loss：是否忽略 pad 对 loss 的贡献。
-loss_scale: null
-label_smoothing: 0.0
-ignore_pad_token_for_loss: true
+max_length: 4096  # 单条样本（或打包后序列）的最大token长度（tokenizer处理后的总长度）
+                  # 建议：根据模型max_position_embeddings调整（如Qwen2.5-7B默认4096）
+                  # 默认值：4096
 
-# 自定义字段名映射（当数据非标准列名时使用）：
-# - 对于 messages 风格的多轮对话数据，通常只需要设置 messages_field。
-# - 对于单轮 SFT 数据，可使用 prompt/response/system 等列。
-prompt_field: prompt
-response_field: response
-system_field: system
-messages_field: messages
-special_tokens_map: null     # 自定义特殊 token 映射（dict）
+truncation_strategy: "split"  # 超长样本处理策略：当单样本tokens超过max_length时的处理方式
+                              # 可选值：
+                              # - "delete"：直接删除超长样本（默认兼容所有场景）
+                              # - "left"：从左侧截断（保留后半部分内容）
+                              # - "right"：从右侧截断（保留前半部分内容）
+                              # - "split"：将超长样本拆分为多条子样本（避免token浪费）
+                              # 注意事项：
+                              # 1. "split"仅支持预训练场景（swift/megatron pt），需ms-swift>=3.11，不兼容cached_dataset
+                              # 2. 多模态模型使用"left"/"right"时，会保留所有image_token，可能导致训练OOM
+                              # 默认值："split"（预训练优先，其他场景可根据需求调整）
+
+# ==============================================================================
+# 高效打包与Padding配置（平衡显存占用与训练效率）
+# ==============================================================================
+
+padding_free: false  # 无填充训练开关：将batch中数据展平，避免padding操作
+                     # 优势：降低显存占用、加快训练速度（同一batch不同序列互不可见）
+                     # 支持场景：CPT/SFT/DPO/GRPO/KTO/GKD
+                     # 默认值：false
+
+padding_side: "right"  # 训练时的Padding方向（仅batch_size>=2时生效）
+                       # 可选值："left"（左侧填充）、"right"（右侧填充）
+                       # 推理时batch_size>=2固定使用左侧填充（避免影响生成效果）
+                       # 默认值："right"
+
+# ==============================================================================
+# 多模态专属配置（适配图文/检测类多模态模型）
+# ==============================================================================
+
+max_pixels: null  # 图像最大像素数限制（如"1024*1024"），避免图像分辨率过高导致显存溢出
+                  # 格式："H*W"（如"896*896"），超出将自动缩放
+                  # 默认值：null（使用模型默认限制）
+
+norm_bbox: null  # 边界框归一化策略（处理数据集中"bbox"字段的绝对坐标）
+                 # 可选值：
+                 # - "norm1000"：将坐标缩放至0-1000（千分位坐标，适配多数多模态模型）
+                 # - "none"：不进行缩放（保留原始绝对坐标，适用于检测类任务）
+                 # 自动逻辑：默认根据模型类型自动选择，图像缩放时（如设置max_pixels）自动适配
+                 # 默认值：null
+
+# ==============================================================================
+# 损失权重配置（控制不同部分token的损失计算权重，适配不同训练场景）
+# ==============================================================================
+
+loss_scale: null  # 训练token的损失权重策略
+                  # 可选值及说明：
+                  # - "default"：默认策略（所有response token权重1，system/user/多模态token、Agent tool_response不计算损失）
+                  # - "last_round"：仅计算最后一轮response的损失（RLHF默认，常用）
+                  # - "all"：计算所有token的损失（swift pt预训练默认）
+                  # - "ignore_empty_think"：在"default"基础上，忽略空的'<escapeShell\n\n'（匹配正则'\\s*\\s*'）
+                  # - "last_round_with_ignore_empty_think"：在"last_round"基础上，忽略空的'<RichMediaReference>\n\n\n\n'
+                  # - Agent专属："react"|"hermes"|"qwen"|"agentflan"|"alpha_umi"等（将tool_call部分loss权重调整为2）
+                  # 详细可选值参考：loss_scale.py
+                  # 默认值：null（等效于"default"）
+
+# ==============================================================================
+# Agent专属配置（适配工具调用类Agent任务）
+# ==============================================================================
+
+agent_template: null  # Agent模板类型：控制工具列表转换、toolcall提取、消息格式
+                      # 可选值："react_en"|"hermes"|"glm4"|"qwen_en"|"toolbench"等
+                      # 自动逻辑：默认根据模型类型自动选择
+                      # 参考文档：Agent专属文档（https://swift.readthedocs.io/zh-cn/latest/Examples/Agent.html）
+                      # 默认值：null
+
+# ==============================================================================
+# 模板与生成辅助配置（兼容不同模板后端与推理格式）
+# ==============================================================================
+
+use_chat_template: true  # 模板类型选择：使用chat模板还是generation模板
+                         # 取值：
+                         # - true：使用chat模板（生成/对话任务默认，适配多轮对话）
+                         # - false：使用generation模板（预训练任务默认，纯文本续写）
+                         # 优势：完美兼容多模态模型的输入格式化
+                         # 默认值：true
+
+sequence_parallel_size: 1  # 序列并行大小：用于长文本训练加速（拆分序列到多卡）
+                           # 支持场景：CPT/SFT/DPO/GRPO
+                           # 训练脚本参考：https://swift.readthedocs.io/zh-cn/latest/Examples/SequenceParallel.html
+                           # 默认值：1（不启用序列并行）
+
+response_prefix: null  # 推理时的响应前缀：强制模型生成的response以指定字符开头
+                       # 示例：QwQ-32B模型设置为'\n'
+                       # 自动逻辑：默认根据模型类型自动设置
+                       # 默认值：null
+
+template_backend: "swift"  # 模板后端选择：控制模板解析引擎
+                           # 可选值：
+                           # - "swift"：默认后端，适配所有内置模板与自定义模板
+                           # - "jinja"：使用transformers的apply_chat_template（仅支持推理，不支持训练，因无法确定损失计算范围）
+                           # 默认值："swift"

@@ -1,14 +1,8 @@
 # 任务：SFT（有监督微调）默认配置
 
-# imports：引入基础配置，顺序很重要——后引入的会覆盖前面的同名字段。
+# imports：按新层级引入 fusion 核心聚合（其内部已包含 base 配置）。
 imports:
-  - ../base/model.yaml
-  - ../base/dataset.yaml
-  - ../base/template.yaml
-  - ../base/train.yaml
-  - ../base/generate.yaml
-  - ../base/quantization.yaml
-  - ../base/tuner.yaml
+  - ../fusion/core.yaml
 
 # 顶层键：直接覆盖 imports 结果（不再使用 overrides）。
 stage: sft                  # 阶段设为 sft（与训练器一致，便于下游逻辑分支）。

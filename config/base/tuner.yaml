@@ -1,25 +1,292 @@
-# 基础：微调（LoRA/PEFT/全参）配置
+# ==============================================================================
+# 微调器（Tuner）核心配置（适配LoRA/全参/AdaLoRA等多种微调方式，含多模态专属冻结策略）
+# 核心说明：根据train_type自动适配对应参数，未启用的微调类型参数可忽略
+# ==============================================================================
 
-# LoRA 开关与通用参数
-enable_lora: false           # 是否启用 LoRA（PEFT）
-use_peft: true               # 使用 PEFT 管理微调权重
-lora_r: 16                   # rank
-lora_alpha: 32               # alpha（缩放系数）
-lora_dropout: 0.05           # dropout
-lora_dtype: auto             # auto|float16|bfloat16（与模型/硬件一致）
-bias: none                   # none|all|lora_only，LoRA 是否训练 bias
+# ==============================================================================
+# 通用微调参数（所有train_type均适用，控制目标模块、参数冻结/训练范围）
+# ==============================================================================
 
-# LoRA 作用模块（随模型而异）
-# 例如：Qwen/LLaMA 常用 ['q_proj','k_proj','v_proj','o_proj','gate_proj','up_proj','down_proj']
-# 若不确定，可留空或在任务/实验中指定
-lora_target_modules: []
+# 多模态模型专属冻结开关（仅对多模态模型生效，区分全参/LoRA训练行为）
+freeze_llm: false  # LLM模块冻结控制
+                   # 行为逻辑：
+                   # - 全参训练：True=冻结LLM权重，False=LLM权重可训练
+                   # - LoRA训练（target_modules="all-linear"）：True=不在LLM添加LoRA，False=在LLM添加LoRA
+                   # 默认值：false
 
-# 全参/部分模块微调（禁用 LoRA 时使用）
-# - freeze_layers：指定需冻结的模块或正则表达式匹配。
-# - trainable_layers：只训练这些模块（其余冻结）。
-freeze_layers: []
-trainable_layers: []
+freeze_vit: true  # VIT/AudioTower模块冻结控制（含视觉、音频等模态塔）
+                  # 行为逻辑同freeze_llm，注意：
+                  # - 若为Omni模型，需修改源码实现仅冻结指定模态塔（如仅冻结audio_tower）
+                  # 默认值：true
 
-# 引导额外策略
-gradient_checkpointing_lora: false  # LoRA 下是否启用梯度检查点
-merge_lora_to_base: false           # 训练结束是否将 LoRA 合并回底层权重
+freeze_aligner: true  # Aligner（Projector）模块冻结控制（模态对齐层）
+                      # 行为逻辑同freeze_llm
+                      # 默认值：true
+
+# 目标模块指定（用于定位需要添加微调器的模块）
+target_modules: ["all-linear"]  # 目标模块列表（支持模块名称/后缀）
+                                # 行为差异：
+                                # - LLM：自动匹配除lm_head外的所有Linear层
+                                # - 多模态LLM：默认仅在LLM添加，可通过上述freeze_*参数扩展至VIT/Aligner
+                                # 示例：["q_proj", "k_proj", "v_proj"]（仅对注意力投影层添加微调器）
+                                # 默认值：["all-linear"]
+
+target_regex: null  # 目标模块正则表达式（优先级高于target_modules）
+                    # 示例：'^(language_model).*\.(q_proj|k_proj|v_proj|o_proj)$'
+                    # 说明：传入后target_modules失效，适配复杂模块命名场景
+                    # 默认值：null
+
+target_parameters: []  # 目标参数名称列表（而非模块名称，需peft>=0.17.0）
+                       # 适用场景：MoE模型中使用nn.Parameter而非nn.Linear的层
+                       # 示例：["gate_weights", "expert_weights"]
+                       # 默认值：[]
+
+# 额外训练模块（附加微调器后，解锁原模型部分模块参与训练）
+modules_to_save: []  # 示例：["embed_tokens", "lm_head"]（LoRA训练中解锁词嵌入和输出层）
+                     # 说明：指定的模块权重会保存在adapter_model.safetensors中
+                     # 默认值：[]
+
+# 权重初始化策略
+init_weights: true  # 可选值：
+                    # - LoRA：true/false/gaussian/pissa/pissa_niter_[num]
+                    # - Bone：true/false/bat
+                    # 默认值：true
+
+# ==============================================================================
+# 全参训练专属参数（train_type="full"时生效）
+# ==============================================================================
+
+freeze_parameters: []  # 需冻结参数的前缀列表（如["model.layers.0.", "model.layers.1."]）
+                       # 默认值：[]
+
+freeze_parameters_regex: null  # 需冻结参数的正则表达式（优先级高于前缀列表）
+                               # 默认值：null
+
+freeze_parameters_ratio: 0.0  # 从下往上冻结的参数比例（0=不冻结，1=全冻结）
+                              # 配合trainable_parameters可实现部分层训练
+                              # 默认值：0.0
+
+trainable_parameters: []  # 额外可训练参数的前缀列表（优先级最高，覆盖冻结规则）
+                          # 默认值：[]
+
+trainable_parameters_regex: null  # 额外可训练参数的正则表达式（优先级最高）
+                                  # 规则说明：全参训练默认所有参数可训练 → 按冻结规则冻结部分参数 → 按本参数解锁指定参数
+                                  # 默认值：null
+
+# ==============================================================================
+# LoRA 专属参数（train_type="lora"时生效）
+# ==============================================================================
+
+lora_rank: 8  # LoRA低秩矩阵的秩（r），控制参数总量和表达能力
+              # 默认值：8
+
+lora_alpha: 32  # LoRA缩放因子（α），通常设为2*lora_rank
+                # 默认值：32
+
+lora_dropout: 0.05  # LoRA层的dropout概率（防止过拟合）
+                    # 默认值：0.05
+
+lora_bias: "none"  # Bias参数训练策略
+                   # 可选值："none"（不训练）、"all"（训练所有bias）
+                   # 默认值："none"
+
+lora_dtype: null  # LoRA模块的数据类型
+                  # 可选值："float16"|"bfloat16"|"float32"
+                  # 默认值：null（跟随PEFT默认行为）
+
+use_dora: false  # 是否启用DoRA（Dynamic LoRA）优化（提升微调效果）
+                 # 默认值：false
+
+use_rslora: false  # 是否启用RS-LoRA（Rotational Sparse LoRA）优化
+                   # 默认值：false
+
+lorap_lr_ratio: null  # LoRA+ 专属参数（学习率比例）
+                      # 建议值：10~16，启用后自动适配LoRA+训练
+                      # 默认值：null（不启用LoRA+）
+
+# ==============================================================================
+# LoRA-GA 专属参数（LoRA梯度对齐初始化，train_type="lora"时生效）
+# ==============================================================================
+
+lora_ga_batch_size: 2  # 梯度估计的批处理大小
+                       # 默认值：2
+
+lora_ga_iters: 2  # 梯度估计的迭代次数
+                  # 默认值：2
+
+lora_ga_max_length: 1024  # 梯度估计时的最大输入长度
+                          # 默认值：1024
+
+lora_ga_direction: "ArB2r"  # 初始化方向
+                            # 可选值："ArBr"|"A2rBr"|"ArB2r"|"random"
+                            # 默认值："ArB2r"
+
+lora_ga_scale: "stable"  # 初始化缩放方式
+                         # 可选值："gd"|"unit"|"stable"|"weightS"
+                         # 默认值："stable"
+
+lora_ga_stable_gamma: 16  # stable缩放模式下的gamma系数
+                          # 默认值：16
+
+# ==============================================================================
+# FourierFt 专属参数（傅里叶长文本微调，train_type="fourierft"时生效）
+# ==============================================================================
+
+fourier_n_frequency: 2000  # 傅里叶变换的频率数量（类似LoRA的rank）
+                           # 默认值：2000
+
+fourier_scaling: 300.0  # W矩阵的缩放系数（类似LoRA的lora_alpha）
+                        # 默认值：300.0
+
+# ==============================================================================
+# BOFT 专属参数（块级高效微调，train_type="boft"时生效）
+# ==============================================================================
+
+boft_block_size: 4  # BOFT块尺寸（不可与boft_block_num同时使用）
+                    # 默认值：4
+
+boft_block_num: null  # BOFT块数量（优先级高于boft_block_size）
+                      # 默认值：null
+
+boft_dropout: 0.0  # BOFT层的dropout概率
+                   # 默认值：0.0
+
+# ==============================================================================
+# Vera 专属参数（注意力层高效微调，train_type="vera"时生效）
+# ==============================================================================
+
+vera_rank: 256  # Vera Attention的维度（类似LoRA的rank）
+                # 默认值：256
+
+vera_projection_prng_key: true  # 是否存储Vera映射矩阵
+                                # 默认值：true
+
+vera_dropout: 0.0  # Vera层的dropout概率
+                   # 默认值：0.0
+
+vera_d_initial: 0.1  # Vera的d矩阵初始值
+                     # 默认值：0.1
+
+# ==============================================================================
+# GaLore 专属参数（梯度对齐低秩微调，train_type="lora"时生效）
+# ==============================================================================
+
+use_galore: false  # 是否启用GaLore优化
+                   # 默认值：false
+
+galore_target_modules: null  # GaLore目标模块（默认对attention和mlp生效）
+                             # 默认值：null
+
+galore_rank: 128  # GaLore的rank值
+                  # 默认值：128
+
+galore_update_proj_gap: 50  # 分解矩阵的更新间隔（steps）
+                            # 默认值：50
+
+galore_scale: 1.0  # 矩阵权重系数
+                   # 默认值：1.0
+
+galore_proj_type: "std"  # GaLore矩阵分解类型
+                         # 默认值："std"
+
+galore_optim_per_parameter: false  # 是否为每个GaLore参数单独设置优化器
+                                   # 默认值：false
+
+galore_with_embedding: false  # 是否对embedding层应用GaLore
+                             # 默认值：false
+
+galore_quantization: false  # 是否启用Q-Galore（量化优化）
+                            # 默认值：false
+
+galore_proj_quant: false  # 是否对SVD分解矩阵量化
+                          # 默认值：false
+
+galore_proj_bits: null  # SVD量化的bit数（需启用galore_proj_quant）
+                        # 默认值：null
+
+galore_proj_group_size: null  # SVD量化的分组数（需启用galore_proj_quant）
+                              # 默认值：null
+
+galore_cos_threshold: 0.4  # 投影矩阵更新的cos相似度阈值
+                           # 默认值：0.4
+
+galore_gamma_proj: 2.0  # 投影矩阵相似时的间隔拉长系数
+                        # 默认值：2.0
+
+galore_queue_size: 5  # 计算投影矩阵相似度的队列长度
+                      # 默认值：5
+
+# ==============================================================================
+# LISA 专属参数（全参训练增强，train_type="full"时生效）
+# 注意：仅支持全参训练，需train_type="full"
+# ==============================================================================
+
+lisa_activated_layers: 0  # 启用LISA的层数（0=不启用，建议2或8）
+                          # 默认值：0
+
+lisa_step_interval: 20  # 切换可反向传播层的间隔（iters）
+                        # 默认值：20
+
+# ==============================================================================
+# UNSLOTH 专属说明（无新增参数，通过调整已有参数适配）
+# 启用方式：--tuner_backend unsloth + --train_type full/lora + --quant_bits 4
+# ==============================================================================
+
+# ==============================================================================
+# LLAMAPRO 专属参数（train_type="llamapro"时生效）
+# ==============================================================================
+
+llamapro_num_new_blocks: 4  # 插入的新层总数
+                            # 默认值：4
+
+llamapro_num_groups: null  # 新层分组数（None=等于llamapro_num_new_blocks，每层单独插入）
+                           # 默认值：null
+
+# ==============================================================================
+# AdaLoRA 专属参数（train_type="adalora"时生效）
+# 说明：继承LoRA的target_modules等参数，但lora_dtype不生效
+# ==============================================================================
+
+adalora_target_r: 8  # AdaLoRA的平均rank
+                     # 默认值：8
+
+adalora_init_r: 12  # AdaLoRA的初始rank
+                    # 默认值：12
+
+adalora_tinit: 0  # AdaLoRA的初始warmup步数
+                  # 默认值：0
+
+adalora_tfinal: 0  # AdaLoRA的最终warmup步数
+                   # 默认值：0
+
+adalora_deltaT: 1  # AdaLoRA的更新间隔（steps）
+                   # 默认值：1
+
+adalora_beta1: 0.85  # AdaLoRA的EMA参数1
+                     # 默认值：0.85
+
+adalora_beta2: 0.85  # AdaLoRA的EMA参数2
+                     # 默认值：0.85
+
+adalora_orth_reg_weight: 0.5  # AdaLoRA的正交正则化权重
+                              # 默认值：0.5
+
+# ==============================================================================
+# ReFT 专属参数（train_type="reft"时生效）
+# 限制：不支持tuner合并、不兼容gradient_checkpointing、不建议使用DeepSpeed
+# ==============================================================================
+
+reft_layers: null  # ReFT应用的层号列表（None=所有层）
+                   # 示例：[1,2,3,4]（仅对第1-4层应用ReFT）
+                   # 默认值：null
+
+reft_rank: 4  # ReFT矩阵的rank值
+              # 默认值：4
+
+reft_intervention_type: "LoreftIntervention"  # ReFT干预类型
+                                              # 可选值："NoreftIntervention"|"LoreftIntervention"|"ConsreftIntervention"|"LobireftIntervention"|"DireftIntervention"|"NodireftIntervention"
+                                              # 默认值："LoreftIntervention"
+
+reft_args: null  # ReFT干预的额外参数（JSON字符串格式）
+                 # 示例：'{"param1": 0.1, "param2": true}'
+                 # 默认值：null
