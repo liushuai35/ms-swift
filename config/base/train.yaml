@@ -1,0 +1,100 @@
+# 基础：训练参数（与 Swift CLI 训练选项对齐）
+
+# 训练器与阶段：
+# - trainer：训练器类型（seq2seq=有监督微调；rm=奖励模型；ppo/grpo=强化学习）。
+# - stage：当前训练阶段（与上面 trainer 通常保持一致，用于下游逻辑分支）。
+trainer: seq2seq            # 可选：seq2seq | rm | ppo | grpo
+stage: sft                  # 可选：sft | rm | ppo | grpo
+
+# 批次与训练步数：
+# - per_device_*_batch_size：单卡批大小；总有效批次=该值*GPU数*gradient_accumulation_steps。
+# - max_steps 与 num_train_epochs 二选一优先生效（max_steps>0 优先）。
+per_device_train_batch_size: 1
+per_device_eval_batch_size: 1
+gradient_accumulation_steps: 1
+max_steps: -1               # >0 则按步数终止；-1 表示按轮数。
+num_train_epochs: 1.0
+seed: 42                    # 全局随机种子（复现实验结果）
+full_determinism: false     # 完全确定性（牺牲性能以换取可复现）
+
+# 预热与日志/评估/保存频率：
+warmup_ratio: 0.03          # 预热比例与 warmup_steps 二选一；两者都设定时以 steps 为准。
+warmup_steps: 0
+save_steps: 1000            # 间隔多少步保存一次 checkpoint。
+logging_steps: 10           # 间隔多少步写一次日志。
+eval_steps: 1000            # 间隔多少步跑一次验证集。
+predict_with_generate: false # 文本任务评估时是否用 generate 生成预测（影响速度）
+output_dir: null            # 训练输出目录（别名覆盖）
+logging_dir: null           # 日志目录（TensorBoard/W&B 本地日志）
+add_version: null           # 是否在输出目录追加版本号
+ignore_args_error: null     # 忽略未知参数（CLI 兼容/降噪）
+
+# 优化与调度：
+learning_rate: 2.0e-5
+weight_decay: 0.0
+lr_scheduler_type: cosine   # 典型：linear、cosine、cosine_with_restarts、polynomial 等。
+lr_scheduler_kwargs: {}     # 调度器额外关键字参数（如 T_max, min_lr 等）
+adam_beta1: 0.9
+adam_beta2: 0.95
+adam_epsilon: 1.0e-8
+max_grad_norm: 1.0
+gradient_checkpointing: false  # 开启可省显存但增计算；与 Flash-Attn 配置需兼容。
+gradient_checkpointing_kwargs: {} # 梯度检查点额外参数（按实现提供）
+average_tokens_across_devices: false # 统计/日志是否按设备聚合 token 指标
+neftune_noise_alpha: null    # NEFTune 正则强度（数值越大噪声越强）
+use_liger_kernel: false      # 启用 Liger kernel（需要环境支持）
+router_aux_loss_coef: null   # MoE 辅助损失权重（Router loss）
+enable_dft_loss: false       # 启用 DFT 相关损失（特定研究场景）
+enable_channel_loss: false   # 启用通道级损失（特定研究场景）
+
+# 日志/评估/保存策略：
+logging_strategy: steps
+evaluation_strategy: steps
+save_strategy: steps
+save_total_limit: 3
+report_to: ["tensorboard"]   # 可选："wandb"、"mlflow" 等；也可多选。
+load_best_model_at_end: false # 若 true，按 metric_for_best_model 在训练末尾回载最佳权重。
+metric_for_best_model: loss
+greater_is_better: false
+logging_first_step: false   # 是否在第 0 步就写日志
+logging_nan_inf_filter: true# 过滤 NaN/Inf 日志
+disable_tqdm: false         # 禁用进度条输出（日志环境下更干净）
+
+# 计算精度/设备：
+# - fp16/bf16：混合精度；建议按 GPU 架构选择（Ampere+ 推荐 bf16）。
+# - tf32：在 Ampere+ 上可显著提速 FP32 矩阵运算（不改变数值范围）。
+fp16: false
+bf16: false
+tf32: null
+bf16_full_eval: false       # 评估使用 bf16（与硬件匹配）
+fp16_full_eval: false       # 评估使用 fp16（与硬件匹配）
+
+# 分布式/大模型策略：
+# - deepspeed：传入 deepspeed json 配置路径或对象。
+# - fsdp 与 fsdp_config：零冗余/FSDP 参数；与 LoRA/量化需配套验证。
+deepspeed: null
+fsdp: null
+fsdp_config: {}
+ddp_find_unused_parameters: null # DDP 是否查找未用参数（模型含条件分支时建议 true）
+dataparallel_backend: null  # ddp | ddp_sharded 等（视框架）
+offload_optimizer: null     # 优化器 offload 至 CPU（常与 deepspeed zero3 搭配）
+offload_model: null         # 模型权重 offload 至 CPU（常与 deepspeed zero3 搭配）
+train_dataloader_shuffle: true   # 训练 dataloader 是否 shuffle（覆盖 dataset_shuffle）
+eval_accumulation_steps: null    # 评测时梯度累积（节省评测显存）
+
+# 数据采样与长度分组：
+# - group_by_length：按样本长度分桶以减少填充，提升吞吐。
+# - length_column_name：指定长度列名（未指定则由数据处理自动估计）。
+group_by_length: false
+length_column_name: null
+train_dataloader_num_workers: 0 # 训练数据加载 worker 数
+eval_dataloader_num_workers: 0  # 验证数据加载 worker 数
+dataloader_num_workers: null    # 别名：若设置则同时覆盖 train/eval 的 num_workers
+pin_memory: true                # dataloader 是否 pin memory
+dataloader_drop_last: false     # 是否丢弃最后一个不足批次的样本
+
+# 断点续训：
+resume_from_checkpoint: null  # 传目录或 checkpoint 路径；为 null 则从头开始。
+save_safetensors: true       # 使用 safetensors 格式保存（更安全快速）
+save_on_each_node: false     # 多节点环境下每节点均保存（通常 false）
+save_only_model: false       # 仅保存模型权重（不含优化器/调度器）

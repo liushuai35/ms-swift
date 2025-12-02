@@ -1,0 +1,52 @@
+# 基础：模板/分词与打包（Format 与 Tokenization）
+
+# 模板与系统提示：
+# - template：决定对话格式（如 chatml、mistral、qwen2、llama3 等）。
+#   auto 表示根据模型名称自动推断默认模板。
+# - system：全局系统提示词；若模板支持系统角色，将插入至对话开端。
+template: auto              # 例如：auto|default|alpaca|chatml|mistral|qwen2|llama3
+system: null
+
+# 分词与截断：
+# - max_length：单条样本（或打包后的序列）的最大 token 长度。
+# - truncation_strategy：超长截断策略；
+#   longest_first（从长的一端截断）、longest_from_left（保留右侧结尾）、discard（直接丢弃超长样本）。
+max_length: 4096
+truncation_strategy: longest_first
+truncation_side: right       # left | right（通常 right）
+
+# 高效打包与 padding：
+# - padding_free：无填充训练（需要配套实现与位置编码支持）。
+# - packing：样本拼接打包以提升吞吐（注意要确保 labels 与 attention_mask 对齐）。
+# - s2s：是否视为序列到序列任务（encoder-decoder 架构或需要特殊 loss 处理的场景）。
+padding_free: false
+packing: false
+packing_length: null         # 打包后的目标长度（与 max_length 配合，优先该项）
+packing_num_proc: 1          # 打包并行进程数（datasets.map 并行）
+s2s: false
+padding_side: right          # left | right；与 tokenizer 对齐
+add_bos_token: null          # 是否在输入前添加 BOS（null=按模型默认）
+add_eos_token: null          # 是否在末尾添加 EOS（null=按模型默认）
+
+# 图像/多模态：
+# - max_pixels：限制图像像素数（如 1024*1024），避免显存溢出。
+# - image_aspect_ratio：图像长宽比处理策略（pad=等比填充；square=裁剪为方形；none=不处理）。
+max_pixels: null
+image_aspect_ratio: pad     # pad | square | none
+
+# 损失函数与标签处理：
+# - loss_scale：在低比特量化训练时可调大以稳定收敛（实现相关）。
+# - label_smoothing：标签平滑。
+# - ignore_pad_token_for_loss：是否忽略 pad 对 loss 的贡献。
+loss_scale: null
+label_smoothing: 0.0
+ignore_pad_token_for_loss: true
+
+# 自定义字段名映射（当数据非标准列名时使用）：
+# - 对于 messages 风格的多轮对话数据，通常只需要设置 messages_field。
+# - 对于单轮 SFT 数据，可使用 prompt/response/system 等列。
+prompt_field: prompt
+response_field: response
+system_field: system
+messages_field: messages
+special_tokens_map: null     # 自定义特殊 token 映射（dict）

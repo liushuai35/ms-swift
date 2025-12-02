@@ -1,0 +1,54 @@
+# 基础：数据参数（与 Swift CLI 中 dataset 相关选项对齐）
+
+# 训练/验证数据源列表。
+# - 支持 Hugging Face Hub ID、远程/本地路径。
+# - 支持可选的子集与采样条目数标注：格式为 "<id_or_path>:<subset>#<num>"。
+#   例如：
+#     - "my_org/my_ds:default#10000"  表示使用子集 default 的 1 万条样本。
+#     - "/data/sft.jsonl#5000"       表示从本地 JSONL 随机采 5000 条（若开启 shuffle）。
+dataset: []
+
+# 验证集数据源。若为空且 split_dataset_ratio > 0，将从训练集合并后按比例切分。
+val_dataset: []
+
+# 预缓存（已分词/打包）数据源。用于直接加载 tokenize 后的缓存，跳过在线处理以提速。
+cached_dataset: []
+
+# 仅当 val_dataset 为空时生效：从 dataset 合并后的数据中切分该比例为验证集。
+split_dataset_ratio: 0.1
+
+# 预处理/缓存/随机化相关参数
+data_seed: 42                 # 数据层随机种子（打乱/切分等）。
+dataset_num_proc: 1           # map/tokenize 过程的并行进程数。
+lazy_tokenize: false          # 惰性分词：按需即时分词（减少预处理时间/内存）
+load_from_cache_file: false   # 若为 true，尽量复用 datasets 的 cache（需哈希一致）。
+dataset_shuffle: true         # 是否打乱训练集。
+val_dataset_shuffle: false    # 是否打乱验证集（通常 false 保持评估稳定）。
+streaming: false              # datasets 流式加载（超大数据/远端时有帮助）。
+interleave_prob: null         # 多数据源混合采样的比例（null=均匀/默认策略）。
+stopping_strategy: first_exhausted  # 多源并行时的停止策略：first_exhausted|all_exhausted。
+shuffle_buffer_size: 1000     # 流式/大数据打乱时的缓冲区大小。
+download_mode: reuse_dataset_if_exists # 下载策略：reuse_dataset_if_exists|force_redownload。
+
+# 列映射与严格模式
+# - 对于 SFT：常见列为 messages / prompt / response / system。
+# - 对于 RM/GRPO：可能需要 prompt, responses, scores 等列。
+# - 可使用 JSON 映射字符串或对象写法：{"text1":"query","text2":"response"}
+columns: null
+
+# 严格模式：若为 true，缺失列/类型不匹配将直接报错；false 则尽量跳过或给出警告。
+strict: false
+
+# 训练前是否移除未使用列（提高内存/IO效率）。
+# - SFT 通常为 true；
+# - GRPO/RL 场景常需保留更多原始列用于奖励函数，因此建议 false（在任务文件里已覆盖）。
+remove_unused_columns: true
+
+# 自我认知/模型元数据自动填充（仅当相关模板/数据处理启用时生效）。
+auto_fields:
+  model_name: null            # 例如："Qwen2.5-7B-Instruct"，用于生成模型自我介绍等。
+  model_author: null          # 例如："Qwen Team"。
+
+# 自定义数据注册：
+# - 追加 datasets 风格的 dataset_info.json 路径，用于本地私有数据集的字段/拆分定义。
+dataset_info_files: []

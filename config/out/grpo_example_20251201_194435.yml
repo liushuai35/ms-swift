@@ -1,0 +1,259 @@
+model: Qwen/Qwen2.5-7B-Instruct
+model_type: null
+model_revision: null
+task_type: causal_lm
+torch_dtype: bfloat16
+attn_impl: flash_attention_2
+trust_remote_code: true
+new_special_tokens: []
+num_labels: null
+problem_type: null
+tokenizer_name: null
+use_fast_tokenizer: true
+pad_token_id: null
+eos_token_id: null
+bos_token_id: null
+rope_scaling: null
+max_model_len: null
+rope_type: null
+rope_base: null
+rope_factor: null
+device_map: auto
+max_memory: null
+local_repo_path: null
+init_strategy: null
+model_kwargs: {}
+dataset:
+- your_dataset_id_or_path:default#1
+val_dataset: []
+cached_dataset: []
+split_dataset_ratio: 0.1
+data_seed: 42
+dataset_num_proc: 1
+lazy_tokenize: false
+load_from_cache_file: false
+dataset_shuffle: true
+val_dataset_shuffle: false
+streaming: false
+interleave_prob: null
+stopping_strategy: first_exhausted
+shuffle_buffer_size: 1000
+download_mode: reuse_dataset_if_exists
+columns:
+  prompt: prompt
+  response: response
+strict: false
+remove_unused_columns: false
+auto_fields:
+  model_name: null
+  model_author: null
+dataset_info_files: []
+template: default
+system: null
+max_length: 4096
+truncation_strategy: longest_first
+truncation_side: right
+padding_free: false
+packing: false
+packing_length: null
+packing_num_proc: 1
+s2s: false
+padding_side: right
+add_bos_token: null
+add_eos_token: null
+max_pixels: null
+image_aspect_ratio: pad
+loss_scale: null
+label_smoothing: 0.0
+ignore_pad_token_for_loss: true
+prompt_field: prompt
+response_field: response
+system_field: system
+messages_field: messages
+special_tokens_map: null
+trainer: grpo
+stage: grpo
+per_device_train_batch_size: 1
+per_device_eval_batch_size: 1
+gradient_accumulation_steps: 2
+max_steps: 1000
+num_train_epochs: 1.0
+seed: null
+full_determinism: false
+warmup_ratio: 0.03
+warmup_steps: 0
+save_steps: 200
+logging_steps: 10
+eval_steps: 200
+predict_with_generate: false
+learning_rate: 1.0e-06
+weight_decay: 0.0
+lr_scheduler_type: cosine
+lr_scheduler_kwargs: {}
+adam_beta1: 0.9
+adam_beta2: 0.95
+adam_epsilon: 1.0e-08
+max_grad_norm: 1.0
+gradient_checkpointing: false
+gradient_checkpointing_kwargs: {}
+average_tokens_across_devices: false
+neftune_noise_alpha: null
+use_liger_kernel: false
+router_aux_loss_coef: null
+enable_dft_loss: false
+enable_channel_loss: false
+logging_strategy: steps
+evaluation_strategy: steps
+save_strategy: steps
+save_total_limit: 3
+report_to:
+- tensorboard
+load_best_model_at_end: false
+metric_for_best_model: loss
+greater_is_better: false
+logging_first_step: false
+logging_nan_inf_filter: true# 过滤 NaN/Inf 日志
+disable_tqdm: false
+fp16: false
+bf16: false
+tf32: null
+bf16_full_eval: false
+fp16_full_eval: false
+deepspeed: null
+fsdp: null
+fsdp_config: {}
+ddp_find_unused_parameters: null
+dataparallel_backend: null
+train_dataloader_shuffle: true
+eval_accumulation_steps: null
+group_by_length: false
+length_column_name: null
+train_dataloader_num_workers: 0
+eval_dataloader_num_workers: 0
+pin_memory: true
+dataloader_drop_last: false
+resume_from_checkpoint: null
+save_safetensors: true
+save_on_each_node: false
+save_only_model: false
+max_new_tokens: 512
+min_new_tokens: null
+temperature: 0.7
+top_p: 0.9
+top_k: 50
+typical_p: null
+repetition_penalty: 1.0
+presence_penalty: 0.0
+frequency_penalty: 0.0
+early_stopping: false
+length_penalty: 1.0
+no_repeat_ngram_size: 0
+beam_search: false
+num_beams: 1
+diversity_penalty: 0.0
+beam_group: 1
+do_sample: true
+use_cache: true
+stream: false
+stop_words: []
+num_return_sequences: 1
+return_dict_in_generate: false# 返回结构化字典（含 scores 等）
+output_scores: false
+logprobs: null
+top_logprobs: null
+n_tokens: null
+quant_method: none
+bnb_4bit: false
+bnb_4bit_compute_dtype: bfloat16
+bnb_4bit_quant_type: nf4
+bnb_4bit_use_double_quant: true
+bnb_8bit: false
+bnb_quant_type: null
+load_in_4bit: false
+load_in_8bit: false
+llm_int8_enable_fp32_cpu_offload: false
+q_bits: 4
+q_group_size: 128
+q_desc_act: false
+q_dtype: int4
+q_apply_lora: true
+kv_quant: false
+kv_bits: 4
+kv_group_size: 256
+kv_desc_act: false
+engine: vllm
+vllm:
+  enable: true
+  trust_remote_code: true
+  enforce_eager: false
+  max_model_len: 8192
+  max_num_seqs: null
+  tensor_parallel_size: 1
+  pipeline_parallel_size: null
+  data_parallel_size: null
+  dtype: auto
+  gpu_memory_utilization: 0.9
+  swap_space: 4
+  max_logprobs: null
+  max_num_batched_tokens: null
+  disable_log_requests: false
+  server:
+    host: null
+    port: 8000
+    base_url: null
+    timeout: 240
+    pass_dataset: false
+    async_generate: false
+sglang:
+  enable: false
+  max_tokens: 512
+  n: 1
+  return_logprob: false
+  tensor_parallel_size: null
+  pipeline_parallel_size: null
+  data_parallel_size: null
+  disable_custom_all_reduce: false
+  kv_cache_dtype: null
+  enable_dp_attention: false
+  speculative:
+    enable: false
+    algorithm: null
+    steps: null
+    eagle_topk: null
+lmdeploy:
+  enable: false
+  session_len: 4096
+  cache_max_entry_count: 0.8
+  tp: 1
+  quant_policy: null
+  vision_batch_size: null
+integration:
+  infer_backend: null
+  max_batch_size: null
+  result_path: null
+  write_batch_size: null
+grpo:
+  num_generations: 8
+  max_prompt_length: 2048
+  max_completion_length: 1024# 回答最大长度（token）。
+  beta: 0.05
+  gamma: 0.99
+  lam: 0.95
+  clip_range: 0.2
+  entropy_coef: 0.0
+  vf_coef: 0.5
+  grad_accum: 1
+  advantage_mode: token
+  normalize_advantage: true
+  reward_agg: mean
+  reward_funcs:
+  - exact_match
+  reward_weights:
+  - 1.0
+generation:
+  steps_per_generation: 1
+  truncation: null
+  stop_words: []
+ds3_gather: false
+loss_type: null
+importance_sampling: false

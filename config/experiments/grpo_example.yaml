@@ -1,0 +1,38 @@
+# 实验：GRPO 示例（需实现对应 reward_funcs）
+# 用途：展示 GRPO 任务的常见超参与引擎配置。请根据数据与奖励函数实现进行调整。
+
+imports:
+  - ../tasks/grpo.yaml          # 引入 GRPO 任务默认（含 engines 与 base）。
+
+# 顶层键：直接覆盖 imports 结果
+# 模型与精度/注意力实现（确保与引擎/硬件兼容）。
+model: Qwen/Qwen2.5-7B-Instruct
+torch_dtype: bfloat16
+attn_impl: flash_attention_2
+device_map: auto
+
+# 相比 SFT，RL 常用更小 lr、更多步数（视显存/吞吐调节）。
+per_device_train_batch_size: 1
+gradient_accumulation_steps: 2
+learning_rate: 1.0e-6
+max_steps: 1000
+eval_steps: 200
+save_steps: 200
+
+# 数据：GRPO 常见单轮 prompt/response 列；若多轮或特定格式请相应调整模板。
+dataset:
+  - your_dataset_id_or_path:default#1
+columns: {"prompt":"prompt", "response":"response"}
+template: default
+
+# GRPO 特定超参：需在代码中注册 reward_funcs 才可调用。
+grpo:
+  num_generations: 8
+  reward_funcs: ["exact_match"]
+  reward_weights: [1.0]
+
+# 引擎：在线多候选采样/打分推荐使用 vLLM，按上下文长度与并发调参。
+engine: vllm
+vllm:
+  enable: true
+  max_model_len: 8192

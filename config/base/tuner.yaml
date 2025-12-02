@@ -1,0 +1,25 @@
+# 基础：微调（LoRA/PEFT/全参）配置
+
+# LoRA 开关与通用参数
+enable_lora: false           # 是否启用 LoRA（PEFT）
+use_peft: true               # 使用 PEFT 管理微调权重
+lora_r: 16                   # rank
+lora_alpha: 32               # alpha（缩放系数）
+lora_dropout: 0.05           # dropout
+lora_dtype: auto             # auto|float16|bfloat16（与模型/硬件一致）
+bias: none                   # none|all|lora_only，LoRA 是否训练 bias
+
+# LoRA 作用模块（随模型而异）
+# 例如：Qwen/LLaMA 常用 ['q_proj','k_proj','v_proj','o_proj','gate_proj','up_proj','down_proj']
+# 若不确定，可留空或在任务/实验中指定
+lora_target_modules: []
+
+# 全参/部分模块微调（禁用 LoRA 时使用）
+# - freeze_layers：指定需冻结的模块或正则表达式匹配。
+# - trainable_layers：只训练这些模块（其余冻结）。
+freeze_layers: []
+trainable_layers: []
+
+# 引导额外策略
+gradient_checkpointing_lora: false  # LoRA 下是否启用梯度检查点
+merge_lora_to_base: false           # 训练结束是否将 LoRA 合并回底层权重

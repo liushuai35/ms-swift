@@ -1,0 +1,65 @@
+# 任务：GRPO（Group Relative Policy Optimization）默认配置
+
+# imports：GRPO 任务通常依赖引擎做在线采样/打分，因此默认引入 engines。
+imports:
+  - ../base/model.yaml
+  - ../base/dataset.yaml
+  - ../base/template.yaml
+  - ../base/train.yaml
+  - ../base/generate.yaml
+  - ../base/quantization.yaml
+  - ../base/engines.yaml
+
+# 顶层键：GRPO 对数据列需求更多，默认不移除未使用列，便于奖励函数读取。
+stage: grpo
+trainer: grpo
+rlhf_type: grpo
+remove_unused_columns: false
+external_plugins: []       # 外部插件（路径列表），用于自定义 reward/执行器等扩展
+
+# GRPO 专属超参（与 Swift 文档对应；不同实现可能字段稍有差异）
+grpo:
+  num_generations: 8         # 每个 prompt 生成候选数（增加计算/显存）。
+  max_prompt_length: 2048    # prompt 最大长度（token）。
+  max_completion_length: 1024# 回答最大长度（token）。
+  beta: 0.05                 # policy 更新强度相关（相当于 KL/温度的平衡项）。
+  gamma: 0.99                # 折扣因子。
+  lam: 0.95                  # GAE 衰减因子。
+  clip_range: 0.2            # PPO/GRPO 裁剪范围。
+  entropy_coef: 0.0          # 熵奖励系数（提升多样性）。
+  vf_coef: 0.5               # 值函数损失权重。
+  grad_accum: 1              # 额外梯度累积（与全局设置叠加需谨慎）。
+  advantage_mode: token      # 优势函数聚合方式：token|sequence 等。
+  normalize_advantage: true  # 是否对优势值做归一化。
+  reward_agg: mean           # 多段奖励聚合：mean | last | sum。
+  reward_funcs: []           # 奖励函数列表（需在代码侧注册实现）。
+  reward_weights: []         # 与 reward_funcs 一一对应的权重。
+  sleep_level: null          # CLI: --sleep_level（vLLM 共置模式常用）
+  log_completions: false     # 记录生成样本（便于排障/分析）
+
+# 推理引擎（用于在线打分/采样）；默认启用 vLLM，可按需改为 sglang/lmdeploy。
+engine: vllm
+vllm:
+  enable: true
+  # 可选：在 GRPO 中对接 vLLM 服务端（与本地内嵌模式互斥）
+  server:
+    host: null            # 例如 "127.0.0.1"
+    port: 8000
+    base_url: null        # 指定完整 URL 则 host/port 忽略
+    timeout: 240
+    pass_dataset: false
+    async_generate: false
+  mode: null              # server | colocate（与 server.* 互斥）
+  enable_lora: null       # CLI: --vllm_enable_lora
+  max_lora_rank: null     # CLI: --vllm_max_lora_rank
+
+# GRPO-引擎联动与生成节奏
+generation:
+  steps_per_generation: 1   # 每多少训练步触发一次在线生成
+  truncation: null          # 生成时截断方式（如按模板/列裁剪）
+  stop_words: []            # 附加停止词（覆盖 generate.yaml）
+
+# GRPO 训练细化项（按 Swift/实现对齐）
+ds3_gather: false           # Deepspeed stage3 跨进程 gather（大模型/多卡场景）
+loss_type: null             # 损失风格：token|sequence|pair 等
+importance_sampling: false  # 重要性采样开关

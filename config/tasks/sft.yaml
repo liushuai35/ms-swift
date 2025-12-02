@@ -1,0 +1,21 @@
+# 任务：SFT（有监督微调）默认配置
+
+# imports：引入基础配置，顺序很重要——后引入的会覆盖前面的同名字段。
+imports:
+  - ../base/model.yaml
+  - ../base/dataset.yaml
+  - ../base/template.yaml
+  - ../base/train.yaml
+  - ../base/generate.yaml
+  - ../base/quantization.yaml
+  - ../base/tuner.yaml
+
+# 顶层键：直接覆盖 imports 结果（不再使用 overrides）。
+stage: sft                  # 阶段设为 sft（与训练器一致，便于下游逻辑分支）。
+trainer: seq2seq            # 标准监督训练器。
+
+# SFT 场景通常可以移除未使用列，减少内存与 IO。
+remove_unused_columns: true
+
+# 日志上报后端：tensorboard/wandb/mlflow 等，按需选择。
+report_to: ["tensorboard"]

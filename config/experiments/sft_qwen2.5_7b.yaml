@@ -1,0 +1,26 @@
+# 实验：SFT on Qwen2.5-7B
+# 用途：演示如何以 SFT 任务为基础，指定模型/精度/注意力实现与数据映射。
+imports:
+  - ../tasks/sft.yaml           # 引入 SFT 任务默认（已包含 base 配置）。
+
+# 顶层键：直接覆盖 imports 结果
+# 模型与精度/注意力实现（确保与硬件/驱动/库版本兼容）。
+model: Qwen/Qwen2.5-7B-Instruct
+torch_dtype: bfloat16         # Ampere+ 推荐 bf16；否则可改 float16。
+attn_impl: flash_attention_2  # 需安装 FA2，并与模型支持匹配。
+device_map: auto              # auto/单卡/自定义映射。
+
+# 训练核心超参（按显存调整批次与梯度累积）。
+per_device_train_batch_size: 1
+gradient_accumulation_steps: 4
+learning_rate: 2.0e-5
+max_steps: 2000
+save_steps: 200
+eval_steps: 200
+
+# 数据设置：按你的真实数据改写 dataset 与列映射。
+dataset:
+  - your_dataset_id_or_path:default#1  # 示例：从数据集 default 子集取 1 份（整集）。
+columns: {"messages":"messages"}       # 多轮 SFT 推荐使用 messages 格式。
+template: chatml                        # 与模型适配的对话模板（Qwen/ChatML）。
+system: "You are a helpful assistant."  # 可选全局系统提示词。

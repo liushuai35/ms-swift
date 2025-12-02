@@ -1,0 +1,71 @@
+# 推理引擎参数（vLLM / SGLang / LMDeploy）
+
+# 顶层选择：
+# - engine: 选择推理后端，若为 null 则使用 HF Transformers 原生 generate。
+#   常见：vllm（吞吐高、KV/offload 支持好）、sglang（低延迟流式）、lmdeploy（英伟达/国产 GPU 优化）。
+engine: null                # 可选：null | vllm | sglang | lmdeploy
+use_vllm: null              # 别名：true 等价于 engine=vllm（与 engine 互斥时以 engine 为准）
+
+# vLLM 配置（高吞吐推理后端）：
+vllm:
+  enable: false                 # 为 true 时表示训练/评测期间通过 vLLM 进行生成/打分。
+  mode: null                    # vLLM 模式：server | colocate（与 server 字段联动）
+  trust_remote_code: true       # 允许加载含自定义代码的模型（社区大模型常需）。
+  enforce_eager: false          # 强制 eager（调试用，性能差）。
+  max_model_len: 4096           # 模型最大上下文长度（需与模型 rope/pos_embeddings 一致）。
+  max_num_seqs: null            # 并发序列上限（根据显存/吞吐调参）。
+  tensor_parallel_size: 1       # 张量并行切分数（多卡切分）。
+  pipeline_parallel_size: null  # 管线并行切分数（通常与长序列/多层分段相关）。
+  data_parallel_size: null      # 数据并行副本数量（服务端集群/多实例场景）。
+  dtype: auto                   # 模型精度：auto|float16|bfloat16|float32 等。
+  gpu_memory_utilization: 0.9   # GPU 显存利用率上限（0~1）。
+  swap_space: 4                 # CPU 交换空间（GB），缓解显存紧张。
+  max_logprobs: null            # 返回 logprobs 的 top-k 数（仅当需要对数概率时设置）。
+  max_num_batched_tokens: null  # 单批次最大 token 数（调优吞吐用）。
+  disable_log_requests: false   # 关闭请求日志（减少 IO）。
+  enable_lora: false            # vLLM 侧启用 LoRA（GRPO/rollout 常用）
+  max_lora_rank: null           # vLLM 侧 LoRA 最大秩
+  # 服务器模式（用于 GRPO/评测对接）：当以独立服务方式连入 vLLM 时使用
+  server:
+    host: null                  # vLLM 服务主机名，例如 "127.0.0.1"
+    port: 8000                  # vLLM 服务端口
+    base_url: null              # 完整 Base URL；设置后优先生效
+    timeout: 240                # 客户端请求超时（秒）
+    pass_dataset: false         # 是否将数据集对象传给服务端（特定接口）
+    async_generate: false       # 使用异步生成（提升吞吐）
+
+# SGLang 配置（轻量推理/服务）：
+sglang:
+  enable: false
+  max_tokens: 512              # 单次生成的最大 token。
+  n: 1                         # 生成候选 n（注意消耗）。
+  return_logprob: false        # 是否返回概率（仅部分接口支持）。
+  tensor_parallel_size: null   # 张量并行（与后端部署一致）
+  pipeline_parallel_size: null # 管线并行
+  data_parallel_size: null     # 数据并行
+  disable_custom_all_reduce: false # 关闭自定义 AllReduce（兼容性）
+  kv_cache_dtype: null         # KV 精度：auto|fp16|fp8 等
+  enable_dp_attention: false   # 数据并行注意力（部分版本支持）
+  speculative:                 # 推测式解码选项
+    enable: false
+    algorithm: null            # 例如：eagle|medusa|draft
+    steps: null                # 推测步数
+    eagle_topk: null           # EAGLE 算法 top-k
+
+# LMDeploy 配置（推理加速/部署）：
+lmdeploy:
+  enable: false
+  session_len: 4096            # 会话上下文长度。
+  cache_max_entry_count: 0.8   # KV cache 占显存比例上限（0~1）。
+  tp: 1                        # 张量并行切分数。
+  quant_policy: null           # 量化策略（LMDeploy 专有）
+  vision_batch_size: null      # 多模态场景下视觉批大小
+
+# 通用推理/评测集成参数（跨引擎统一入口，可在实验覆盖）
+integration:
+  infer_backend: null          # 统一推理后端：vllm|sglang|lmdeploy|transformers
+  sampler_engine: null         # 采样引擎（tests 中使用）：pt|client|vllm|sglang|lmdeploy
+  max_batch_size: null         # 统一最大批大小
+  result_path: null            # 结果输出目录
+  write_batch_size: null       # 结果写入批大小（大评测降低 IO 压力）
+  engine_kwargs: null          # 引擎附加参数（JSON 字符串/字典），如 client 模式 base_url/api_key
