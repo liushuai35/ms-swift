@@ -20,6 +20,14 @@ def cross_entropy_loss_func(outputs, labels, num_items_in_batch=None, **kwargs):
         num_items_in_batch = (labels[:, 1:] != -100).sum()
     return token_loss.sum() / num_items_in_batch
 
+def cross_entropy_loss_func_with_special_token(outputs, labels, num_items_in_batch=None,         token_weight_dict={151669:2}, **kwargs):
+    # You need to return a scalar representing the loss.
+    from swift.trainers import per_token_loss_func
+    token_loss = per_token_loss_func(outputs, labels, token_weight_dict=token_weight_dict)
+    if num_items_in_batch is None:
+        num_items_in_batch = (labels[:, 1:] != -100).sum()
+    return token_loss.sum() / num_items_in_batch
+
 
 def _parse_pair_sentence(outputs):
     if isinstance(outputs, dict):
@@ -711,6 +719,7 @@ def listwise_generative_reranker_loss(outputs,
 
 loss_mapping = {
     'cross_entropy': cross_entropy_loss_func,  # examples
+    'cross_entropy_special': cross_entropy_loss_func_with_special_token,  # examples
     # embedding
     'cosine_similarity': cosine_similarity_func,
     'contrastive': contrastive_loss,

@@ -24,7 +24,7 @@ from .utils import per_token_loss_func, per_token_loss_func_sp
 logger = get_logger()
 
 
-class Trainer(SwiftMixin, DataLoaderMixin, HfTrainer):
+class Trainer(SwiftMixin, DataLoaderMixin, HfTrainer): # Trainer → SwiftMixin → DataLoaderMixin → HfTrainer → 更上层的父类（如object）。
     args: TrainingArguments
 
     @contextmanager
@@ -54,7 +54,7 @@ class Trainer(SwiftMixin, DataLoaderMixin, HfTrainer):
 
     def train(self, *args, **kwargs):
         with self._patch_loss_function():
-            return super().train(*args, **kwargs)
+            return super().train(*args, **kwargs) # HFTrainer有train方法，SwiftMixin也有train方法，DataLoaderMixin没有，实际调用SwiftMixin的train方法。
 
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
         loss, outputs = super().compute_loss(model, inputs, return_outputs=True)

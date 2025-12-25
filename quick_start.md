@@ -2,7 +2,7 @@ export CUDA_HOME=/home/a205/anaconda3/envs/ls
 export PYTHONPATH= /home/a205/anaconda3/envs/ls/bin/python
 unset PYTHONPATH
 
-/mnt/PublicStorageNew1/liushuai/dataset/segmented_glm
+/home/shuai.liu01/data/segmented_glm_v1
 
 # 模型下載
 ## 1. 安装（一次就行）
@@ -18,21 +18,21 @@ modelscope download --model Qwen/Qwen2.5-3B-Instruct --local_dir ./Qwen2.5-3B-In
 CUDA_VISIBLE_DEVICES=0,1,2,3 NPROC_PER_NODE=4 \
 swift sft \
 --torch_dtype 'bfloat16' \
---model 'Qwen/Qwen2.5-Coder-1.5B' \
+--model 'Qwen/Qwen3-4B-Instruct-2507' \
 --model_type 'qwen3' \
 --template 'qwen3' \
---dataset 'local/segmented_glm' \
+--dataset '/home/shuai.liu01/data/segmented_glm_v1' \
 --new_special_tokens 'swift/new_special_tokens/token.txt' \
 --split_dataset_ratio '0.1' \
 --max_length '8192' \
 --max_new_tokens '4096' \
 --task_type 'causal_lm' \
+--loss_type 'cross_entropy_special' \
 --lora_rank '16' \
 --lora_alpha '64' \
 --lora_dtype 'bfloat16' \
 --learning_rate '1e-5' \
---truncation_strategy left \
---num_train_epochs '10' \
+--num_train_epochs '20' \
 --gradient_accumulation_steps '16' \
 --eval_steps '500' \
 --attn_impl 'flash_attention_2' \
@@ -40,12 +40,13 @@ swift sft \
 --warmup_ratio 0.05 \
 --dataloader_num_workers 4 \
 --report_to 'wandb' \
---deepspeed zero1 \
+--deepspeed zero2 \
 --add_version False \
---output_dir /home/shuai.liu01/ms-swift/output/Qwen3-1.7B/v0-20251126-154155 \
---logging_dir /home/shuai.liu01/ms-swift/output/Qwen3-1.7B/v0-20251126-154155/runs \
+--output_dir /home/shuai.liu01/ms-swift/output/Qwen3-1.7B/2025-12-25 \
+--logging_dir /home/shuai.liu01/ms-swift/output/Qwen3-1.7B/2025-12-25/runs \
 --ignore_args_error True
 
+<!-- --truncation_strategy left \ -->
 
 # GRPO
 CUDA_VISIBLE_DEVICES=3 \
@@ -175,3 +176,34 @@ swift rlhf \
     --system 'examples/train/grpo/prompt.txt' \
     --deepspeed zero3 \
     --log_completions true
+
+## SFT 调用流程（便于排查）
+入口
+- `swift` 可执行 -> `swift/cli/sft.py` 解析 CLI -> `sft_main(...)`
+- `swift/llm/train/sft.py` : `sft_main` -> `SwiftSft(args).main()` -> `run()` -> `train(trainer)` -> `trainer.train(...)`
+
+准备阶段
+- `SwiftPipeline.__init__` : parse_args / seed -> `SwiftPipeline.main` 包装日志时间
+- `SwiftSft.__init__`
+    - `_prepare_model_tokenizer` -> `args.get_model_processor` (模型+tokenizer/processor) -> sequence_parallel(可选) -> `_prepare_generation_config`
+    - `_prepare_template` -> `args.get_template` 设置 train 模式，校验多模态/packing
+    - `_prepare_callbacks` -> LISA / Adapter / extra_callbacks / EarlyStop(可选)
+
+数据阶段
+- `_prepare_dataset` :
+    - 若 cached_dataset -> `_get_cached_dataset` (load_from_disk)
+    - 若 dataset -> `_get_dataset` (load_dataset + split/shuffle)
+    - 合并多个源 -> `DatasetLoader._concat_datasets`
+    - `_encode_dataset` (EncodePreprocessor 预编码，非 streaming/lazy)；`_post_process_datasets` (LazyLLMDataset / PackingDataset / streaming 编码)；`_show_dataset` 打印样例与长度统计
+- `_get_data_collator` -> `template.data_collator`
+
+模型/调优阶段
+- `prepare_model` (TunerMixin) : 按 `train_type` 选择 Swift/PEFT/Unsloth/LongLoRA/adalora/vera/boft 等；可应用 Liger kernel、GaLore、冻结/解冻、resume/adapters 加载；修正 fp16 可训练参数
+
+Trainer 与训练阶段
+- `TrainerFactory.get_trainer_cls` -> 实例化 trainer (model, training_args, data_collator, train/val, callbacks, template)
+- `trainer.train(resume_from_checkpoint)` 开训；混入逻辑在 `swift/trainers/...`
+
+保存/输出阶段
+- `_save_trainer_state` : 处理 last/best ckpt（可建符号链接），push_to_hub(可选)，绘图，写 `logging.jsonl`，返回 best_metric 等
+- `SwiftPipeline.main` 记录结束时间

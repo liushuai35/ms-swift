@@ -764,7 +764,15 @@ def get_model_tokenizer(
         num_new_tokens = tokenizer.add_special_tokens({'additional_special_tokens': new_special_tokens})
         if num_new_tokens > 0:
             logger.info(f'Added {num_new_tokens} new special tokens.')
-
+            
+            for token in new_special_tokens:
+                token_id = tokenizer.convert_tokens_to_ids(token)
+                # 校验：确保token确实被正确添加（id不为未知token的id）
+                if token_id == tokenizer.unk_token_id:
+                    logger.warning(f"Token {token} was not added successfully!")
+                else:
+                    logger.info(f"Special token '{token}' -> label (id): {token_id}")
+                    
             if model is not None and not return_dummy_model:
                 llm_model = get_lm_head_model(model, model_meta)
                 origin_vocab_size = HfConfigFactory.get_config_attr(llm_model.config, 'vocab_size')

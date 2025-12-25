@@ -53,7 +53,7 @@ class SwiftSft(SwiftPipeline, TunerMixin):
             return
         if hasattr(self.model, 'hf_device_map'):
             logger.info(f'model.hf_device_map: {self.model.hf_device_map}')
-            
+        
         # # ---------- 1. 取出 tokenizer ----------
         # tokenizer = getattr(self.processor, 'tokenizer', self.processor)   # 兼容 processor/tokenizer 二合一
 

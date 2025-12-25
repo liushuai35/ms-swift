@@ -100,12 +100,12 @@ Now wait for the user text and output only the segmented result.
 # 注册 segmented_glm 数据集
 register_dataset(
     DatasetMeta(
-        ms_dataset_id='local/segmented_glm',
-        dataset_name='local/segmented_glm',
+        ms_dataset_id='local/segmented_glm_v1',
+        dataset_name='local/segmented_glm_v1',
         # 使用 glob 让 loader 能以 text 读取，从而触发预处理器
-        dataset_path='/home/shuai.liu01/data/segmented_glm/**/*.seg.txt',
+        dataset_path='/home/shuai.liu01/data/segmented_glm_v1/**/*.seg.txt',
         preprocess_func=SegmentedGLMPreprocessor(
-            data_glob='/home/shuai.liu01/data/segmented_glm/**/*.seg.txt'
+            data_glob='/home/shuai.liu01/data/segmented_glm_v1/**/*.seg.txt'
         ),
         tags=['segmentation', 'sft', 'local'],
     )
