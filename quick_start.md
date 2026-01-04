@@ -18,7 +18,7 @@ modelscope download --model Qwen/Qwen2.5-3B-Instruct --local_dir ./Qwen2.5-3B-In
 CUDA_VISIBLE_DEVICES=0,1,2,3 NPROC_PER_NODE=4 \
 swift sft \
 --torch_dtype 'bfloat16' \
---model 'Qwen/Qwen3-4B-Instruct-2507' \
+--model '/home/shuai.liu01/.cache/modelscope/hub/models/Qwen/Qwen3-4B-Instruct-2507' \
 --model_type 'qwen3' \
 --template 'qwen3' \
 --dataset '/home/shuai.liu01/data/segmented_glm_v1' \
@@ -34,7 +34,7 @@ swift sft \
 --learning_rate '1e-5' \
 --num_train_epochs '20' \
 --gradient_accumulation_steps '16' \
---eval_steps '500' \
+--eval_steps '100' \
 --attn_impl 'flash_attention_2' \
 --neftune_noise_alpha '0' \
 --warmup_ratio 0.05 \
@@ -51,9 +51,7 @@ swift sft \
 # GRPO
 CUDA_VISIBLE_DEVICES=3 \
 swift rollout \
-  --model Qwen/Qwen2.5-Coder-1.5B \
-  --vllm_enable_lora true \
-  --vllm_max_lora_rank 16
+    --model /home/shuai.liu01/.cache/modelscope/hub/models/Qwen/Qwen3-4B-Instruct-2507 --max_model_len 8192
 
 e2b_11fd48d425a1c2f22f428dbf026395f6ea63df27
 
@@ -61,10 +59,10 @@ e2b_11fd48d425a1c2f22f428dbf026395f6ea63df27
 E2B_API_KEY=e2b_11fd48d425a1c2f22f428dbf026395f6ea63df27 \
 WANDB_API_KEY=352ca31147e360ebc4dc5dcf8b204658f97cfbc1 \
 CUDA_VISIBLE_DEVICES=0,1,2 \
-NPROC_PER_NODE=2 \
+NPROC_PER_NODE=3 \
 swift rlhf \
     --rlhf_type grpo \
-    --model Qwen/Qwen2.5-Coder-1.5B \
+    --model /home/shuai.liu01/.cache/modelscope/hub/models/Qwen/Qwen3-4B-Instruct-2507 \
     --external_plugins examples/train/grpo/plugin/plugin.py \
     --reward_funcs external_code_reward external_code_format \
     --reward_weights 1.0 0.1 \
@@ -76,24 +74,25 @@ swift rlhf \
     --lora_rank 16 \
     --lora_alpha 32 \
     --torch_dtype bfloat16 \
-    --dataset 'open-r1/verifiable-coding-problems-python-10k' \
+    --dataset /home/shuai.liu01/.cache/modelscope/hub/datasets/open-r1/verifiable-coding-problems-python-10k \
     --load_from_cache_file true \
-    --max_completion_length 2048 \
+    --max_completion_length 4096 \
     --num_train_epochs 1 \
-    --per_device_train_batch_size 2 \
-    --per_device_eval_batch_size 2 \
+    --per_device_train_batch_size 1 \
+    --per_device_eval_batch_size 1 \
     --learning_rate 1e-6 \
-    --gradient_accumulation_steps 1 \
+    --gradient_accumulation_steps 16 \
     --eval_steps 200 \
     --save_steps 200 \
     --save_total_limit 2 \
     --logging_steps 5 \
+    --max_model_len 8192 \
     --max_length 4096 \
     --output_dir output \
     --warmup_ratio 0.05 \
     --dataloader_num_workers 4 \
     --dataset_num_proc 4 \
-    --num_generations 14 \
+    --num_generations 8 \
     --temperature 0.9 \
     --system 'examples/train/grpo/prompt.txt' \
     --deepspeed zero2 \
