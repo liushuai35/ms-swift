@@ -112,6 +112,77 @@ register_dataset(
 )
 
 
+class SegmentedGLMGRPOPreprocessor(ResponsePreprocessor):
+    """GRPO 用的分段预处理器：
+    - query: 使用原文（移除标记后）与提示词。
+    - response/solution: 原文带 <|segment_flag_token|>，用于监督/奖励。
+    - reference_indices: 参考切分位置（字符起始索引），供 SegmentIndexReward 使用。
+    """
+
+    def __init__(self, prompts: Optional[str] = None, **kwargs):
+        super().__init__(**kwargs)
+        self.prompts = prompts or "Please split the following content:\n{content}\n"
+        self.segment_flag_token = '<|segment_flag_token|>'
+        self.system_prompt = """You segment a document for embedding/RAG.
+Instructions:
+- Split the input into coherent semantic chunks (topic, section, step, or tightly related facts).
+- Do not rewrite, summarize, or omit text.
+- Preserve original wording, code, numbers, lists.
+- Keep each chunk reasonably sized (rough guide: 300–1200 characters) and do not cut a sentence in half.
+- Merge very tiny trailing fragments into the previous chunk.
+
+Output format:
+Return the chunks in original order.
+Place a single line containing exactly: <|segment_flag_token|>
+between consecutive chunks.
+Do not add anything else.
+"""
+
+    def _find_indices(self, text: str) -> List[int]:
+        indices = []
+        token = self.segment_flag_token
+        start = 0
+        while True:
+            pos = text.find(token, start)
+            if pos == -1:
+                break
+            indices.append(pos)
+            start = pos + len(token)
+        return indices
+
+    def preprocess(self, row: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        # 兼容行级 text 或自定义列
+        content = row.get('content', row.get('text', ''))
+        if not content:
+            return None
+
+        clean_content = content.replace(self.segment_flag_token, '').strip()
+        prompt = self.prompts.format(content=clean_content)
+        query = f"{self.system_prompt}\n\n{prompt}"
+
+        reference_indices = self._find_indices(content)
+
+        # ResponsePreprocessor 期望的键：query/response；附加 solution 与 reference_indices 供 RLHF 使用
+        return {
+            'query': query,
+            'response': content,   # 带标记的目标输出
+            'solution': content,   # 供 reward 函数（如 SegmentFlagReward）直接比对
+            'reference_indices': reference_indices,  # 供 SegmentIndexReward
+        }
+
+
+# GRPO 版注册（可按需启用）
+register_dataset(
+    DatasetMeta(
+        ms_dataset_id='local/segmented_glm_v1_grpo',
+        dataset_name='local/segmented_glm_v1_grpo',
+        dataset_path='/home/shuai.liu01/data/segmented_glm_v1/**/*.seg.txt',
+        preprocess_func=SegmentedGLMGRPOPreprocessor(),
+        tags=['segmentation', 'grpo', 'local'],
+    )
+)
+
+
 class AlpacaZhPreprocessor(AlpacaPreprocessor):
 
     @classmethod

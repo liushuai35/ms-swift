@@ -6,7 +6,9 @@ import json
 if TYPE_CHECKING:
     from swift.llm import InferRequest
 
-
+"""PRM (Process Reward Model)s for RLHF training. 过程奖励模型，用于对生成的回答进行评分。
+搜索与规划：PRM 是实现类似 AlphaGo 的 System 2 思维（慢思考） 的关键。因为有了步进式的打分，LLM 可以在推理时进行“树搜索”：如果当前步骤得分低，就回溯重试；如果得分高，就继续往下推导。这被认为是 OpenAI o1 (Q*) 等技术背后的核心逻辑之一。
+"""
 class PRM:
 
     def __call__(self, **kwargs) -> List[Any]:

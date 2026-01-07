@@ -21,7 +21,7 @@ swift sft \
 --model '/home/shuai.liu01/.cache/modelscope/hub/models/Qwen/Qwen3-4B-Instruct-2507' \
 --model_type 'qwen3' \
 --template 'qwen3' \
---dataset '/home/shuai.liu01/data/segmented_glm_v1' \
+--dataset 'local/segmented_glm_v1' \
 --new_special_tokens 'swift/new_special_tokens/token.txt' \
 --split_dataset_ratio '0.1' \
 --max_length '8192' \
@@ -39,12 +39,12 @@ swift sft \
 --neftune_noise_alpha '0' \
 --warmup_ratio 0.05 \
 --dataloader_num_workers 4 \
---report_to 'wandb' \
 --deepspeed zero2 \
 --add_version False \
 --output_dir /home/shuai.liu01/ms-swift/output/Qwen3-1.7B/2025-12-25 \
 --logging_dir /home/shuai.liu01/ms-swift/output/Qwen3-1.7B/2025-12-25/runs \
---ignore_args_error True
+--ignore_args_error True \
+--report_to 'wandb' 
 
 <!-- --truncation_strategy left \ -->
 
@@ -52,8 +52,6 @@ swift sft \
 CUDA_VISIBLE_DEVICES=3 \
 swift rollout \
     --model /home/shuai.liu01/.cache/modelscope/hub/models/Qwen/Qwen3-4B-Instruct-2507 --max_model_len 8192
-
-e2b_11fd48d425a1c2f22f428dbf026395f6ea63df27
 
 
 E2B_API_KEY=e2b_11fd48d425a1c2f22f428dbf026395f6ea63df27 \
@@ -98,6 +96,48 @@ swift rlhf \
     --deepspeed zero2 \
     --log_completions true \
     --report_to wandb
+
+
+E2B_API_KEY=e2b_11fd48d425a1c2f22f428dbf026395f6ea63df27 \
+WANDB_API_KEY=352ca31147e360ebc4dc5dcf8b204658f97cfbc1 \
+CUDA_VISIBLE_DEVICES=0,1,2 \
+NPROC_PER_NODE=3 \
+swift rlhf \
+    --rlhf_type grpo \
+    --model /home/shuai.liu01/.cache/modelscope/hub/models/Qwen/Qwen3-4B-Instruct-2507 \
+    --reward_funcs 'segment_flag' \
+    --reward_weights 1.0 \
+    --vllm_mode server \
+    --use_vllm true \
+    --vllm_server_host 127.0.0.1 \
+    --vllm_server_port 8000 \
+    --train_type lora \
+    --lora_rank 16 \
+    --lora_alpha 32 \
+    --torch_dtype bfloat16 \
+    --dataset 'local/segmented_glm_v1_grpo' \
+    --load_from_cache_file true \
+    --max_completion_length 4096 \
+    --num_train_epochs 1 \
+    --per_device_train_batch_size 1 \
+    --per_device_eval_batch_size 1 \
+    --learning_rate 1e-6 \
+    --gradient_accumulation_steps 16 \
+    --eval_steps 200 \
+    --save_steps 200 \
+    --save_total_limit 2 \
+    --logging_steps 5 \
+    --max_model_len 8192 \
+    --max_length 4096 \
+    --output_dir output \
+    --warmup_ratio 0.05 \
+    --dataloader_num_workers 4 \
+    --dataset_num_proc 4 \
+    --num_generations 8 \
+    --temperature 0.9 \
+    --system 'examples/train/grpo/prompt.txt' \
+    --deepspeed zero2 \
+    --log_completions true 
 
 ## 單卡
 CUDA_VISIBLE_DEVICES=0 \
