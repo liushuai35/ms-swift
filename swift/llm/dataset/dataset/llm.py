@@ -25,24 +25,9 @@ class SegmentedGLMPreprocessor(RowPreprocessor):
     def __init__(self, prompts: Optional[str] = None, data_glob: Optional[str] = None, **kwargs):
         super().__init__(**kwargs)
         self.prompts = prompts or "Please split the following content:\n{content}\n"
-        self.segment_flag_token = '<|segment_flag_token|>'
+        self.segment_flag_token = '===SEGMENT==='
         self.data_glob = data_glob  # 例如：/path/to/segmented_glm/**/*.seg.txt
-        self.system_prompt = """You segment a document for embedding/RAG.
-Instructions:
-- Split the input into coherent semantic chunks (topic, section, step, or tightly related facts).
-- Do not rewrite, summarize, or omit text.
-- Preserve original wording, code, numbers, lists.
-- Keep each chunk reasonably sized (rough guide: 300–1200 characters) and do not cut a sentence in half.
-- Merge very tiny trailing fragments into the previous chunk.
-
-Output format:
-Return the chunks in original order.
-Place a single line containing exactly: <|segment_flag_token|>
-between consecutive chunks.
-Do not add anything else.
-
-Now wait for the user text and output only the segmented result.
-"""
+        self.system_prompt = """按语义分段：请在内容独立处插入换行及“===SEGMENT===”标记。保持原文完全一致，禁止删改。"""
 
     def prepare_dataset(self, dataset: HfDataset) -> HfDataset:
         # 如果提供了 data_glob，则忽略 loader 读入的行级文本，按文件粒度重建数据集
@@ -100,12 +85,14 @@ Now wait for the user text and output only the segmented result.
 # 注册 segmented_glm 数据集
 register_dataset(
     DatasetMeta(
-        ms_dataset_id='local/segmented_glm_v1',
-        dataset_name='local/segmented_glm_v1',
+        ms_dataset_id='local/segmented_gemini_v1',
+        dataset_name='local/segmented_gemini_v1',
         # 使用 glob 让 loader 能以 text 读取，从而触发预处理器
-        dataset_path='/home/shuai.liu01/data/segmented_glm_v1/**/*.seg.txt',
+        # dataset_path='/home/shuai.liu01/data/segmented_glm_v1/**/*.seg.txt',
+        dataset_path='/home/shuai.liu01/data/segmented_gemini_v1/**/*.seg.txt',
         preprocess_func=SegmentedGLMPreprocessor(
-            data_glob='/home/shuai.liu01/data/segmented_glm_v1/**/*.seg.txt'
+            # data_glob='/home/shuai.liu01/data/segmented_glm_v1/**/*.seg.txt'
+            data_glob='/home/shuai.liu01/data/segmented_gemini_v1/**/*.seg.txt'
         ),
         tags=['segmentation', 'sft', 'local'],
     )

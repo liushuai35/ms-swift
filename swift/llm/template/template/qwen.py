@@ -59,21 +59,22 @@ register_template(
 class Qwen3Template(ThinkingTemplate):
     no_think_prefix = '<think>\n\n</think>\n\n'
 
-qwq3_system = ("""You segment a document for embedding/RAG.
-Instructions:
-- Split the input into coherent semantic chunks (topic, section, step, or tightly related facts).
-- Do not rewrite, summarize, or omit text.
-- Preserve original wording, code, numbers, lists.
-- Keep each chunk reasonably sized (rough guide: 300–1200 characters) and do not cut a sentence in half.
-- Merge very tiny trailing fragments into the previous chunk.
+# qwq3_system = ("""You segment a document for embedding/RAG.
+# Instructions:
+# - Split the input into coherent semantic chunks (topic, section, step, or tightly related facts).
+# - Do not rewrite, summarize, or omit text.
+# - Preserve original wording, code, numbers, lists.
+# - Keep each chunk reasonably sized (rough guide: 300–1200 characters) and do not cut a sentence in half.
+# - Merge very tiny trailing fragments into the previous chunk.
 
-Output format:
-Return the chunks in original order.
-Place a single line containing exactly: <|segment_flag_token|>
-between consecutive chunks.
-Do not add anything else.
+# Output format:
+# Return the chunks in original order.
+# Place a single line containing exactly: <|segment_flag_token|>
+# between consecutive chunks.
+# Do not add anything else.
 
-Now wait for the user text and output only the segmented result.""")
+# Now wait for the user text and output only the segmented result.""")
+qwq3_system = ("""按语义分段：请在内容独立处插入换行及“===SEGMENT===”标记。保持原文完全一致，禁止删改。""")
 
 # register_template(QwenTemplateMeta(LLMTemplateType.qwen3, default_system=None, template_cls=Qwen3Template))
 register_template(QwenTemplateMeta(LLMTemplateType.qwen3, default_system=qwq3_system, template_cls=Qwen3Template))

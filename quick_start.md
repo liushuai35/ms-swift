@@ -15,13 +15,16 @@ export MODELSCOPE_MIRROR=https://modelscope.cn
 modelscope download --model Qwen/Qwen2.5-3B-Instruct --local_dir ./Qwen2.5-3B-Instruct
 
 # SFT
+export MASTER_PORT=29510
+
 CUDA_VISIBLE_DEVICES=0,1,2,3 NPROC_PER_NODE=4 \
 swift sft \
+--master_port 23000 \
 --torch_dtype 'bfloat16' \
 --model '/home/shuai.liu01/.cache/modelscope/hub/models/Qwen/Qwen3-4B-Instruct-2507' \
 --model_type 'qwen3' \
 --template 'qwen3' \
---dataset 'local/segmented_glm_v1' \
+--dataset 'local/segmented_gemini_v1' \
 --new_special_tokens 'swift/new_special_tokens/token.txt' \
 --split_dataset_ratio '0.1' \
 --max_length '8192' \
@@ -31,8 +34,9 @@ swift sft \
 --lora_rank '16' \
 --lora_alpha '64' \
 --lora_dtype 'bfloat16' \
+--target_modules 'all-linear' \
 --learning_rate '1e-5' \
---num_train_epochs '20' \
+--num_train_epochs '30' \
 --gradient_accumulation_steps '16' \
 --eval_steps '100' \
 --attn_impl 'flash_attention_2' \
@@ -41,12 +45,95 @@ swift sft \
 --dataloader_num_workers 4 \
 --deepspeed zero2 \
 --add_version False \
+--save_total_limit 2 \
 --output_dir /home/shuai.liu01/ms-swift/output/Qwen3-1.7B/2025-12-25 \
 --logging_dir /home/shuai.liu01/ms-swift/output/Qwen3-1.7B/2025-12-25/runs \
 --ignore_args_error True \
+--report_to 'tensorboard' 
 --report_to 'wandb' 
 
+# 运行合并命令（替换成你的路径）
+https://blog.csdn.net/weixin_28999139/article/details/157075487
+
+swift export \
+  --adapters /home/shuai.liu01/ms-swift/output/Qwen3-1.7B/2025-12-25/checkpoint-660 \
+  --model /home/shuai.liu01/.cache/modelscope/hub/models/Qwen/Qwen3-4B-Instruct-2507 \
+  --output_dir /home/shuai.liu01/merged_qwen3_4b_with_special_token \
+  --new_special_tokens swift/new_special_tokens/token.txt \
+  --merge_lora true \
+  --torch_dtype bfloat16
+
+#必须带你的特殊token文件
+
 <!-- --truncation_strategy left \ -->
+
+CUDA_VISIBLE_DEVICES=0,1,2 NPROC_PER_NODE=3 \
+swift sft \
+--port 23000 \
+--torch_dtype 'bfloat16' \
+--model '/home/shuai.liu01/.cache/modelscope/hub/models/Qwen/Qwen3-4B-Instruct-2507' \
+--model_type 'qwen3' \
+--template 'qwen3' \
+--dataset 'local/segmented_gemini_v1' \
+--new_special_tokens 'swift/new_special_tokens/token.txt' \
+--split_dataset_ratio '0.1' \
+--max_length '8192' \
+--max_new_tokens '4096' \
+--task_type 'causal_lm' \
+--loss_type 'cross_entropy_special' \
+--lora_rank '16' \
+--lora_alpha '64' \
+--lora_dtype 'bfloat16' \
+--target_modules 'all-linear' \
+--learning_rate '1e-5' \
+--num_train_epochs '30' \
+--gradient_accumulation_steps '16' \
+--eval_steps '100' \
+--attn_impl 'flash_attention_2' \
+--neftune_noise_alpha '0' \
+--warmup_ratio 0.05 \
+--dataloader_num_workers 4 \
+--deepspeed zero2 \
+--add_version False \
+--save_total_limit 1 \
+--output_dir /home/shuai.liu01/ms-swift/output/Qwen3-1.7B/2025-12-25 \
+--logging_dir /home/shuai.liu01/ms-swift/output/Qwen3-1.7B/2025-12-25/runs \
+--ignore_args_error True \
+--report_to 'tensorboard' 
+
+
+CUDA_VISIBLE_DEVICES=0,1,2 NPROC_PER_NODE=3 \
+swift sft \
+--port 23000 \
+--torch_dtype 'bfloat16' \
+--model '/home/shuai.liu01/.cache/modelscope/hub/models/Qwen/Qwen3-4B-Instruct-2507' \
+--model_type 'qwen3' \
+--template 'qwen3' \
+--dataset 'local/segmented_gemini_v1' \
+--split_dataset_ratio '0.1' \
+--max_length '8192' \
+--max_new_tokens '4096' \
+--task_type 'causal_lm' \
+--loss_type 'cross_entropy' \
+--lora_rank '16' \
+--lora_alpha '64' \
+--lora_dtype 'bfloat16' \
+--target_modules 'all-linear' \
+--learning_rate '1e-5' \
+--num_train_epochs '30' \
+--gradient_accumulation_steps '16' \
+--eval_steps '100' \
+--attn_impl 'flash_attention_2' \
+--neftune_noise_alpha '0' \
+--warmup_ratio 0.05 \
+--dataloader_num_workers 4 \
+--deepspeed zero2 \
+--add_version False \
+--save_total_limit 1 \
+--output_dir /home/shuai.liu01/ms-swift/output/Qwen3-1.7B/2025-12-25 \
+--logging_dir /home/shuai.liu01/ms-swift/output/Qwen3-1.7B/2025-12-25/runs \
+--ignore_args_error True \
+--report_to 'tensorboard' 
 
 # GRPO
 CUDA_VISIBLE_DEVICES=3 \
@@ -246,3 +333,20 @@ Trainer 与训练阶段
 保存/输出阶段
 - `_save_trainer_state` : 处理 last/best ckpt（可建符号链接），push_to_hub(可选)，绘图，写 `logging.jsonl`，返回 best_metric 等
 - `SwiftPipeline.main` 记录结束时间
+
+# 合并模型
+
+swift export \
+    --model /home/shuai.liu01/.cache/modelscope/hub/models/Qwen/Qwen3-4B-Instruct-2507 \
+    --adapters /home/shuai.liu01/ms-swift/output/Qwen3-1.7B/2025-12-25/checkpoint-450 \
+    --output_dir /home/shuai.liu01/merged_qwen3_4b_with_special_token \
+    --merge_lora true
+
+
+# 运行时合并（Inference-time Merge）
+
+swift infer \
+    --adapters /home/shuai.liu01/ms-swift/output/Qwen3-1.7B/2025-12-25/checkpoint-450 \
+    --merge_lora true \
+    --infer_backend vllm \
+    --max_new_tokens 2048
