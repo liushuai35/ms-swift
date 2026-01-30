@@ -17,9 +17,8 @@ modelscope download --model Qwen/Qwen2.5-3B-Instruct --local_dir ./Qwen2.5-3B-In
 # SFT
 export MASTER_PORT=29510
 
-CUDA_VISIBLE_DEVICES=0,1,2,3 NPROC_PER_NODE=4 \
+CUDA_VISIBLE_DEVICES=0,1,2,3 NPROC_PER_NODE=4 --master_port 23000 \
 swift sft \
---master_port 23000 \
 --torch_dtype 'bfloat16' \
 --model '/home/shuai.liu01/.cache/modelscope/hub/models/Qwen/Qwen3-4B-Instruct-2507' \
 --model_type 'qwen3' \
@@ -67,9 +66,9 @@ swift export \
 
 <!-- --truncation_strategy left \ -->
 
-CUDA_VISIBLE_DEVICES=0,1,2 NPROC_PER_NODE=3 \
+CUDA_VISIBLE_DEVICES=0,1,2,3 NPROC_PER_NODE=4 \
 swift sft \
---port 23000 \
+--master_port 23000 \
 --torch_dtype 'bfloat16' \
 --model '/home/shuai.liu01/.cache/modelscope/hub/models/Qwen/Qwen3-4B-Instruct-2507' \
 --model_type 'qwen3' \
@@ -85,42 +84,8 @@ swift sft \
 --lora_alpha '64' \
 --lora_dtype 'bfloat16' \
 --target_modules 'all-linear' \
---learning_rate '1e-5' \
---num_train_epochs '30' \
---gradient_accumulation_steps '16' \
---eval_steps '100' \
---attn_impl 'flash_attention_2' \
---neftune_noise_alpha '0' \
---warmup_ratio 0.05 \
---dataloader_num_workers 4 \
---deepspeed zero2 \
---add_version False \
---save_total_limit 1 \
---output_dir /home/shuai.liu01/ms-swift/output/Qwen3-1.7B/2025-12-25 \
---logging_dir /home/shuai.liu01/ms-swift/output/Qwen3-1.7B/2025-12-25/runs \
---ignore_args_error True \
---report_to 'tensorboard' 
-
-
-CUDA_VISIBLE_DEVICES=0,1,2 NPROC_PER_NODE=3 \
-swift sft \
---port 23000 \
---torch_dtype 'bfloat16' \
---model '/home/shuai.liu01/.cache/modelscope/hub/models/Qwen/Qwen3-4B-Instruct-2507' \
---model_type 'qwen3' \
---template 'qwen3' \
---dataset 'local/segmented_gemini_v1' \
---split_dataset_ratio '0.1' \
---max_length '8192' \
---max_new_tokens '4096' \
---task_type 'causal_lm' \
---loss_type 'cross_entropy' \
---lora_rank '16' \
---lora_alpha '64' \
---lora_dtype 'bfloat16' \
---target_modules 'all-linear' \
---learning_rate '1e-5' \
---num_train_epochs '30' \
+--learning_rate '2e-5' \
+--num_train_epochs '50' \
 --gradient_accumulation_steps '16' \
 --eval_steps '100' \
 --attn_impl 'flash_attention_2' \
@@ -188,7 +153,7 @@ swift rlhf \
 E2B_API_KEY=e2b_11fd48d425a1c2f22f428dbf026395f6ea63df27 \
 WANDB_API_KEY=352ca31147e360ebc4dc5dcf8b204658f97cfbc1 \
 CUDA_VISIBLE_DEVICES=0,1,2 \
-NPROC_PER_NODE=3 \
+NPROC_PER_NODE=3  --master_port 23000 \
 swift rlhf \
     --rlhf_type grpo \
     --model /home/shuai.liu01/.cache/modelscope/hub/models/Qwen/Qwen3-4B-Instruct-2507 \
@@ -228,7 +193,7 @@ swift rlhf \
 
 ## 單卡
 CUDA_VISIBLE_DEVICES=0 \
-swift rlhf \
+swift rlhf  --master_port 23000 \
     --rlhf_type grpo \
     --model Qwen/Qwen2.5-Coder-1.5B \
     --reward_funcs accuracy format \
@@ -262,7 +227,7 @@ swift rlhf \
 nproc_per_node 比显卡数少一，vLLM默认单独部署于最后一张卡，即卡7
 
 CUDA_VISIBLE_DEVICES=0,1,2,3 \
-NPROC_PER_NODE=4 \
+NPROC_PER_NODE=4  --master_port 23000 \
 swift rlhf \
     --rlhf_type grpo \
     --model Qwen/Qwen2.5-Coder-1.5B \

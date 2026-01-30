@@ -22,12 +22,23 @@ class SegmentedGLMPreprocessor(RowPreprocessor):
     处理 segmented_glm 目录下的 .seg.txt 文件，每行一个 segment，支持 prompt 模板。
     通过重载 prepare_dataset 完成目录读取和样本构建，无需修改 loader。
     """
-    def __init__(self, prompts: Optional[str] = None, data_glob: Optional[str] = None, **kwargs):
+    def __init__(self, data_glob: Optional[str] = None, **kwargs):
         super().__init__(**kwargs)
-        self.prompts = prompts or "Please split the following content:\n{content}\n"
+        self.prompts = "{content}"
         self.segment_flag_token = '===SEGMENT==='
         self.data_glob = data_glob  # 例如：/path/to/segmented_glm/**/*.seg.txt
-        self.system_prompt = """按语义分段：请在内容独立处插入换行及“===SEGMENT===”标记。保持原文完全一致，禁止删改。"""
+        self.system_prompt = f"""你是一个RAG文档助手。任务：在语义独立的内容块之间插入“{self.segment_flag_token}”标记。保持原文一致。"""
+        # =======================================================
+        # 1. 构造 One-Shot 示例输入 (模拟真实的“文本->表格”场景)
+        # =======================================================
+        self.demo_input = """1.2 市场概况分析。本季度市场需求呈现显著上升趋势，特别是在亚太地区。供应链的优化使得交付周期缩短了20%，客户满意度提升明显。表 2. 2024年各地区市场份额分布；地区    份额    增长率亚太    45%     +15%北美    30%     +5%"""
+
+        # =======================================================
+        # 2. 构造 One-Shot 示例输出 (动态插入标记)
+        # =======================================================
+        # 注意：使用 f-string 配合三引号，自动保持格式
+        self.demo_output = f"""1.2 市场概况分析。本季度市场需求呈现显著上升趋势，特别是在亚太地区。供应链的优化使得交付周期缩短了20%，客户满意度提升明显。{self.segment_flag_token}表 2. 2024年各地区市场份额分布；地区    份额    增长率亚太    45%     +15%北美    30%     +5%"""
+
 
     def prepare_dataset(self, dataset: HfDataset) -> HfDataset:
         # 如果提供了 data_glob，则忽略 loader 读入的行级文本，按文件粒度重建数据集
@@ -47,10 +58,9 @@ class SegmentedGLMPreprocessor(RowPreprocessor):
             if not content:
                 continue
             clean_content = content.replace(self.segment_flag_token, '').strip()
-            prompt = self.prompts.format(content=clean_content)
             messages = [
                 {"role": "system", "content": self.system_prompt},
-                {"role": "user", "content": prompt},
+                {"role": "user", "content": clean_content},
                 {"role": "assistant", "content": content, "loss": True}
             ]
             samples.append({'messages': messages})
@@ -71,12 +81,17 @@ class SegmentedGLMPreprocessor(RowPreprocessor):
             return None
         # 移除 flag token
         clean_content = content.replace(self.segment_flag_token, '').strip()
-        # 格式化 prompt
-        prompt = self.prompts.format(content=clean_content)
         # SFT 格式：messages
         messages = [
             {"role": "system", "content": self.system_prompt},
-            {"role": "user", "content": prompt},
+            
+            # --- 示例部分 (让模型学习格式) ---
+            {"role": "user", "content": self.demo_input},
+            # 注意：loss=False 表示不计算这部分的梯度，只做参考
+            {"role": "assistant", "content": self.demo_output, "loss": False},
+            
+            # --- 真实数据部分 (真正训练的内容) ---
+            {"role": "user", "content": clean_content},
             {"role": "assistant", "content": content, "loss": True}
         ]
         return {'messages': messages}
